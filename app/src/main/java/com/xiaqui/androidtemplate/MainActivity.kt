@@ -1,6 +1,7 @@
 package com.xiaqui.androidtemplate
 
 import android.app.Activity
+import android.graphics.Color
 import android.os.Bundle
 import android.widget.TextView
 
@@ -11,6 +12,8 @@ class MainActivity : Activity() {
             text = "Hello Android"
             textSize = 28f
             gravity = android.view.Gravity.CENTER
+            setBackgroundColor(Color.RED)
+            setTextColor(Color.WHITE)
         })
     }
 }
