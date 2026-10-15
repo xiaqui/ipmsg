@@ -185,6 +185,7 @@ class LanEngine(private val context: Context, private val store: Store,
             val success = runCatching {
                 val connection = network.socketFactory.createSocket()
                 sockets.add(connection)
+                val timeout = deadlines.schedule({ runCatching { connection.close() } },8,TimeUnit.SECONDS)
                 try { connection.use { socket ->
                     socket.soTimeout = 5000
                     socket.connect(InetSocketAddress(peer.host,Protocol.PORT),3000)
@@ -193,7 +194,7 @@ class LanEngine(private val context: Context, private val store: Store,
                     require(ack.getString("type") == "ACK" && ack.getString("id") == letter.id)
                     require(store.peers().any { it.id == peer.id && it.trusted })
                     store.delivered(letter.id,peer.id)
-                } } finally { sockets.remove(connection) }
+                } } finally { timeout.cancel(false);sockets.remove(connection) }
             }.isSuccess
             if(success) return
         }

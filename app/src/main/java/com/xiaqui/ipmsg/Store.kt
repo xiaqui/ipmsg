@@ -114,7 +114,7 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
         }
     }
     @Synchronized fun pending(now: Long): List<Letter> =
-        readableDatabase.rawQuery("SELECT l.id,l.peer,l.name,l.body,l.incoming,l.created,l.state,l.attempts,l.next FROM letters l JOIN peers p ON p.id=l.peer WHERE l.incoming=0 AND l.state='PENDING' AND l.next<=? AND p.trusted=1 ORDER BY l.created ASC",arrayOf(now.toString())).use { c ->
+        readableDatabase.rawQuery("SELECT l.id,l.peer,l.name,l.body,l.incoming,l.created,l.state,l.attempts,l.next FROM letters l JOIN peers p ON p.id=l.peer WHERE l.incoming=0 AND l.state='PENDING' AND l.next<=? AND p.trusted=1 ORDER BY l.next ASC,l.created ASC",arrayOf(now.toString())).use { c ->
             buildList { while(c.moveToNext()) add(Letter(c.getString(0),c.getString(1),c.getString(2),c.getString(3),
                 c.getInt(4)==1,c.getLong(5),c.getString(6),c.getInt(7),c.getLong(8))) }
         }
