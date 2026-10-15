@@ -1,7 +1,7 @@
 # TASK.md — 家庭内 IP Messenger 仕様書・実装指示書
 
 更新日: 2026-10-15
-状態: 企画・要件定義。Nearby Games連携は保留。template-apk を土台に開発する。
+状態: 企画・要件定義。Nearby Games連携は保留。**既に xiaqui/android テンプレートから作成済みの ipmsg を土台に開発する。**
 
 ## 1. 目的と基本原則
 
@@ -14,7 +14,9 @@ LINE風のアカウント制チャットやグループチャットではなく�
 - 中央サーバー役や固定ホストを置かない。各端末が P2P で発見・受信・送信できる。
 - UI は簡単に。**「全端末」宛てを最も目立つ場所に置く**。
 - 端末側には名前を付ける。人物より**端末**を送信先の基本単位とする。
-- 配布・署名・CI は template-apk の確定した仕組みを採用し、既存リポジトリの運用を壊さない。
+- **基盤は既存の xiaqui/ipmsg（xiaqui/android を元に作成済み）**。別テンプレートから作り直さない。既存のビルド・署名・GitHub Actions を実態確認して必要な部分だけ改修する。
+- 2026-10-15確認時点、ipmsg の `app/build.gradle.kts` は `minSdk=26`、`namespace/applicationId=com.xiaqui.androidtemplate` のテンプレート値のまま。Android 6対応には `minSdk=23` に変更し、依存ライブラリや利用APIがAPI 23で動作することを検証する。ID/ラベル/プロジェクト名も専用値へ変更する。
+- 既存 README では APK は GitHub Actions artifact までで、**Google Drive配送は未設定**。固定Drive配送や恒久署名が完了しているとは扱わず、既存ワークフロー/Secretsを点検してから追加する。秘密情報や鍵はコミットしない。
 
 ## 2. 送信先の選択（最重要）
 
@@ -111,9 +113,12 @@ LINE風のアカウント制チャットやグループチャットではなく�
 
 ## 8. 推奨開発順・完了条件
 
-### Phase 0: 土台
-- template-apk の構成・署名・CI・配送手順を確認して適用。
-- minSdk=23でビルドし、端末名/ID・設定・権限案内を用意。
+### Phase 0: 既存 ipmsg テンプレートをアプリ化
+- **新規雛形を作らない**。現在の `xiaqui/ipmsg` をそのまま育てる。元は `xiaqui/android` テンプレートで、Gradle設定/READMEにテンプレートの値が残っている。
+- `settings.gradle.kts` の `AndroidTemplate`、`app/build.gradle.kts` の `com.xiaqui.androidtemplate`（namespace/applicationId）や表示名を IP Messenger 専用に変更し、更新インストール用のアプリIDと署名を固定する。
+- 現状の `minSdk=26` を **23** に変更し、Android 6/7互換の依存ライブラリと機能差分を確認する。compile/target SDK 35は必要性を見て維持・調整する。
+- 既存の GitHub Actions がAPKを生成できること、Secrets による署名が意図どおり働くことを検証する。Drive配布は README 記載のとおり未設定なので、利用する場合は新規に整備・配送検証する。
+- READMEを ipmsg 実態に書き換え、端末名/ID・設定・権限案内を用意。
 
 ### Phase 1: 必須メッセンジャー
 - 信頼済み端末の発見・一覧、全端末/自分宛て、個別/同報テキスト、通常便、履歴、到着確認。
