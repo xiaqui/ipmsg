@@ -20,7 +20,7 @@ import android.util.Base64
 /** Versioned, bounded wire format. Discovery contains no message body. */
 object Protocol {
     const val PORT = 42124
-    const val MAX_FRAME = 32768
+    const val MAX_FRAME = 80000
     const val MAX_TEXT = 8192
     private val random = SecureRandom()
     fun encode(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
@@ -63,7 +63,7 @@ object Protocol {
     /** RSA-OAEP wraps a fresh AES-256 key; GCM authenticates ciphertext; RSA pins sender. */
     fun seal(body: JSONObject, sender: KeyPair, recipient: PublicKey): ByteArray {
         val plain = body.put("v", 1).put("from", id(sender.public)).put("to", id(recipient)).toString()
-        require(plain.toByteArray(Charsets.UTF_8).size < 16000)
+        require(plain.toByteArray(Charsets.UTF_8).size <= 52000)
         val aes = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
         val iv = ByteArray(12).also(random::nextBytes)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
@@ -108,6 +108,15 @@ object Protocol {
         val size = input.readInt()
         require(size in 1..MAX_FRAME)
         return ByteArray(size).also(input::readFully)
+    }
+    fun onPrefix(address: java.net.InetAddress, network: java.net.InetAddress, prefix: Int): Boolean {
+        val a = address.address; val b = network.address
+        if(a.size != 4 || b.size != 4 || prefix !in 1..32 || address.isMulticastAddress || address.isLoopbackAddress) return false
+        return a.indices.all { index ->
+            val bits = (prefix - index*8).coerceIn(0,8)
+            val mask = (255 shl (8-bits)) and 255
+            (a[index].toInt() and mask) == (b[index].toInt() and mask)
+        }
     }
     fun validText(body: String) = body.isNotBlank() && body.toByteArray(Charsets.UTF_8).size <= MAX_TEXT
     fun validMessageId(id: String) = id.matches(Regex("[0-9a-f-]{36}"))

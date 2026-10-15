@@ -31,6 +31,8 @@ class LanEngine(private val context: Context, private val store: Store,
     private val prefs = context.getSharedPreferences("settings",Context.MODE_PRIVATE)
     private val clock = Executors.newSingleThreadScheduledExecutor()
     private val sender = Executors.newSingleThreadExecutor()
+    private val deadlines = Executors.newSingleThreadScheduledExecutor()
+    private val activeHosts = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String,Boolean>())
     private val sending = AtomicBoolean(false)
     private val sockets = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Socket,Boolean>())
     private val workers = ThreadPoolExecutor(2,2,0,TimeUnit.SECONDS,ArrayBlockingQueue<Runnable>(8))
@@ -55,8 +57,11 @@ class LanEngine(private val context: Context, private val store: Store,
                 (it.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || it.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
         } == true
     }
-    private fun local(address: InetAddress) = address is Inet4Address &&
-        (address.isSiteLocalAddress || address.isLinkLocalAddress) && !address.isMulticastAddress
+    private fun local(address: InetAddress): Boolean = networks().any { network ->
+        cm.getLinkProperties(network)?.linkAddresses?.any { link ->
+            Protocol.onPrefix(address,link.address,link.prefixLength)
+        } == true
+    }
     fun start() {
         check(running.compareAndSet(false,true))
         store.offline()
@@ -105,13 +110,20 @@ class LanEngine(private val context: Context, private val store: Store,
                         try {
                             val socket = server.accept()
                             socket.soTimeout = 5000
-                            if(!local(socket.inetAddress) || networks().isEmpty()) { socket.close(); continue }
+                            val host = socket.inetAddress.hostAddress!!
+                            // Unknown endpoints cannot consume receive workers; one in-flight socket per known host.
+                            if(!local(socket.inetAddress) || !store.peers().any { it.trusted && it.host == host } ||
+                                !activeHosts.add(host)) { socket.close(); continue }
                             sockets.add(socket)
+                            val timeout = deadlines.schedule({ runCatching { socket.close() } },3,TimeUnit.SECONDS)
                             try { workers.execute {
                                 try { socket.use { if(running.get()) runCatching { receive(it) } } }
-                                finally { sockets.remove(socket) }
+                                finally { timeout.cancel(false);sockets.remove(socket);activeHosts.remove(host) }
                             } }
-                            catch(_: java.util.concurrent.RejectedExecutionException) { sockets.remove(socket);socket.close() }
+                            catch(_: java.util.concurrent.RejectedExecutionException) {
+                                timeout.cancel(false);sockets.remove(socket);activeHosts.remove(host);socket.close()
+                            }
+
                         } catch(_: java.net.SocketTimeoutException) { }
                     }
                 }
@@ -151,7 +163,7 @@ class LanEngine(private val context: Context, private val store: Store,
             try { sender.execute {
                 try {
                     val available = store.peers().filter { it.trusted && it.online(System.currentTimeMillis()) }.map { it.id }.toSet()
-                    store.pending(System.currentTimeMillis()).filter { it.peer in available }.takeLast(16).forEach { letter ->
+                    store.pending(System.currentTimeMillis()).filter { it.peer in available }.take(16).forEach { letter ->
                         if(!running.get()) return@execute
                         val peer = store.peers().find { it.id == letter.peer && it.trusted && it.online(System.currentTimeMillis()) }
                             ?: return@forEach
@@ -202,7 +214,7 @@ class LanEngine(private val context: Context, private val store: Store,
     }
     fun close() {
         running.set(false); udp?.close(); tcp?.close()
-        clock.shutdownNow(); sender.shutdownNow(); workers.shutdownNow()
+        clock.shutdownNow(); sender.shutdownNow(); workers.shutdownNow(); deadlines.shutdownNow()
         sockets.forEach { runCatching { it.close() } }; sockets.clear()
         if(callbackRegistered) runCatching { cm.unregisterNetworkCallback(callback) }
         multicast?.let { if(it.isHeld) it.release() }

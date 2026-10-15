@@ -23,6 +23,7 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE peers(id TEXT PRIMARY KEY,name TEXT NOT NULL,pub TEXT NOT NULL,trusted INTEGER NOT NULL,host TEXT NOT NULL,seen INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE letters(id TEXT NOT NULL,peer TEXT NOT NULL,name TEXT NOT NULL,body TEXT NOT NULL,incoming INTEGER NOT NULL,created INTEGER NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(id,peer,incoming))")
+        db.execSQL("CREATE INDEX pending_due ON letters(incoming,state,next,created)")
     }
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
     @Synchronized fun peers(): List<Peer> = readableDatabase.rawQuery(
@@ -36,12 +37,18 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
         writableDatabase.delete("peers", "trusted=0 AND seen<?", arrayOf((now - 120000).toString()))
         if (old == null && peers().size >= 64) return
         if (old != null && old.key != hello.key) return
-        val v = ContentValues().apply {
+        val db = writableDatabase
+        // Insert once with default trust=false. Discovery never writes an existing trust flag.
+        val initial = ContentValues().apply {
             put("id",hello.id);put("name",hello.name);put("pub",hello.key)
-            put("trusted",if(old?.trusted == true) 1 else 0);put("host",host);put("seen",now)
+            put("trusted",0);put("host",host);put("seen",now)
         }
-        writableDatabase.insertWithOnConflict("peers",null,v,SQLiteDatabase.CONFLICT_REPLACE)
+        db.insertWithOnConflict("peers",null,initial,SQLiteDatabase.CONFLICT_IGNORE)
+        db.update("peers",ContentValues().apply {
+            put("name",hello.name);put("host",host);put("seen",now)
+        },"id=? AND pub=?",arrayOf(hello.id,hello.key))
     }
+
     @Synchronized fun trust(id: String, value: Boolean) {
         writableDatabase.update("peers", ContentValues().apply { put("trusted",if(value) 1 else 0) },
             "id=?",arrayOf(id))
@@ -106,7 +113,11 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
                 c.getInt(4)==1,c.getLong(5),c.getString(6),c.getInt(7),c.getLong(8))) }
         }
     }
-    @Synchronized fun pending(now: Long) = letters(false).filter { it.state == "PENDING" && it.next <= now }
+    @Synchronized fun pending(now: Long): List<Letter> =
+        readableDatabase.rawQuery("SELECT l.id,l.peer,l.name,l.body,l.incoming,l.created,l.state,l.attempts,l.next FROM letters l JOIN peers p ON p.id=l.peer WHERE l.incoming=0 AND l.state='PENDING' AND l.next<=? AND p.trusted=1 ORDER BY l.created ASC",arrayOf(now.toString())).use { c ->
+            buildList { while(c.moveToNext()) add(Letter(c.getString(0),c.getString(1),c.getString(2),c.getString(3),
+                c.getInt(4)==1,c.getLong(5),c.getString(6),c.getInt(7),c.getLong(8))) }
+        }
 }
 
 object Identity {

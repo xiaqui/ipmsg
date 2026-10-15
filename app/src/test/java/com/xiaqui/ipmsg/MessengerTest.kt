@@ -141,4 +141,33 @@ class MessengerTest {
         DataOutputStream(short).apply { writeInt(100);writeByte(1) }
         assertThrows(EOFException::class.java) { Protocol.read(DataInputStream(ByteArrayInputStream(short.toByteArray()))) }
     }
+    @Test fun m1_activeLanPrefixIncludesCarrierGradePrivateRanges() {
+        val host=java.net.InetAddress.getByName("100.64.2.3")
+        assertTrue(Protocol.onPrefix(host,java.net.InetAddress.getByName("100.64.2.4"),24))
+        assertFalse(Protocol.onPrefix(host,java.net.InetAddress.getByName("100.64.3.4"),24))
+        assertFalse(Protocol.onPrefix(java.net.InetAddress.getByName("127.0.0.1"),host,8))
+    }
+    @Test fun m2_everyAcceptedEscapedBoundaryCanBeEncryptedAndFramed() {
+        listOf("\"".repeat(8192),"\\".repeat(8192),"\n".repeat(8192),"\u0000".repeat(8192)).forEach { text ->
+            assertTrue(Protocol.validText(text))
+            val frame=Protocol.seal(JSONObject().put("type","TEXT")
+                .put("id","00000000-0000-0000-0000-000000000003").put("body",text),alice,bob.public)
+            val buffer=ByteArrayOutputStream()
+            Protocol.write(DataOutputStream(buffer),frame)
+            val decoded=Protocol.read(DataInputStream(ByteArrayInputStream(buffer.toByteArray())))
+            assertEquals(text,Protocol.open(decoded,bob,alice.public).getString("body"))
+        }
+    }
+    @Test fun m3_discoveryNeverRestoresRevokedTrustAcrossStoreInstances() {
+        trust(bob,"B")
+        val second=Store(RuntimeEnvironment.getApplication())
+        try {
+            second.trust(b,false)
+            discover(bob,"renamed B")
+            assertFalse(store.peers().single().trusted)
+            assertEquals("renamed B",store.peers().single().name)
+            assertTrue(store.pending(Long.MAX_VALUE).isEmpty())
+        } finally { second.close() }
+    }
+
 }
