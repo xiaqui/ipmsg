@@ -68,8 +68,9 @@ jobs:
           results = [ET.parse(p).getroot() for p in pathlib.Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml")]
           total = sum(int(r.get("tests", 0)) for r in results)
           failures = sum(int(r.get("failures", 0)) + int(r.get("errors", 0)) for r in results)
-          assert total >= 39 and failures == 0, (total, failures)
-          print(f"Unit test results: {total} tests, {failures} failures/errors")
+          skipped = sum(int(r.get("skipped", 0)) for r in results)
+          assert total >= 48 and failures == 0 and skipped == 0, (total, failures, skipped)
+          print(f"Unit test results: {total} tests, {failures} failures/errors, {skipped} skipped")
           PY
           cat signing.txt SHA256SUMS provenance.txt
       - uses: actions/upload-artifact@v4
