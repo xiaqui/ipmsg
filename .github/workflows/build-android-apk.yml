@@ -3,8 +3,10 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -41,9 +43,52 @@ jobs:
           keytool -list -keystore "$ANDROID_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null
           echo "Shared signing alias verified."
       - name: Test and build APK
-        run: gradle testDebugUnitTest assembleDebug --no-daemon
+        run: gradle testDebugUnitTest lintDebug assembleDebug --no-daemon
+      - name: Verify signed APK and record provenance
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs --min-sdk-version 23 "$APK" > signing.txt
+          EXPECTED=$(keytool -exportcert -keystore "$ANDROID_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | sha256sum | cut -d' ' -f1)
+          grep -qi "certificate SHA-256 digest: $EXPECTED" signing.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" > badging.txt
+          grep -q "package: name='com.xiaqui.ipmsg'" badging.txt
+          grep -q "sdkVersion:'23'" badging.txt
+          cp "$APK" ipmsg-debug.apk
+          sha256sum ipmsg-debug.apk > SHA256SUMS
+          printf 'source_sha=%s\nrun_id=%s\n' "$SOURCE_SHA" "$GITHUB_RUN_ID" > provenance.txt
+          printf 'apk_size=%s\n' "$(stat -c %s ipmsg-debug.apk)" >> provenance.txt
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          results = [ET.parse(p).getroot() for p in pathlib.Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml")]
+          total = sum(int(r.get("tests", 0)) for r in results)
+          failures = sum(int(r.get("failures", 0)) + int(r.get("errors", 0)) for r in results)
+          skipped = sum(int(r.get("skipped", 0)) for r in results)
+          assert total >= 48 and failures == 0 and skipped == 0, (total, failures, skipped)
+          print(f"Unit test results: {total} tests, {failures} failures/errors, {skipped} skipped")
+          PY
+          cat signing.txt SHA256SUMS provenance.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: android-template-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: ipmsg-debug
+          path: |
+            ipmsg-debug.apk
+            SHA256SUMS
+            provenance.txt
+            signing.txt
+            badging.txt
           if-no-files-found: error
+      - name: Upload test and lint results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipmsg-checks
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+            app/build/reports/lint-results-debug.*
