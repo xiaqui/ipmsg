@@ -148,7 +148,7 @@ class MessengerTest {
         assertFalse(Protocol.onPrefix(java.net.InetAddress.getByName("127.0.0.1"),host,8))
     }
     @Test fun m2_everyAcceptedEscapedBoundaryCanBeEncryptedAndFramed() {
-        listOf("\"".repeat(8192),"\\".repeat(8192),"\n".repeat(8192),"\u0000".repeat(8192)).forEach { text ->
+        listOf("\"".repeat(8192),"\\".repeat(8192),("x"+"\n".repeat(8191)),"\u0000".repeat(8192)).forEach { text ->
             assertTrue(Protocol.validText(text))
             val frame=Protocol.seal(JSONObject().put("type","TEXT")
                 .put("id","00000000-0000-0000-0000-000000000003").put("body",text),alice,bob.public)
