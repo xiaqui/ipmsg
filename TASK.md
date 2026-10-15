@@ -3,6 +3,43 @@
 更新日: 2026-10-15
 状態: 企画・要件定義。Nearby Games連携は保留。**既に xiaqui/android テンプレートから作成済みの ipmsg を土台に開発する。**
 
+## 0. 今回の Work 実行指示（最優先・この節を読めば着手できる）
+
+**Workへのユーザー指示は「TASK.mdを読んで作業して」だけを想定する。この節とルートの `AGENTS.md` を読み、次のM3まで自走実装すること。着手前の逐次確認は不要。**
+
+- **AGENTS.mdを必ず読んで従う**。Workのリポジトリ指示ファイルとして使用する（自動読込に依存しない）。
+- 対象は既存 `xiaqui/ipmsg`。元の `xiaqui/android` テンプレートからの再作成不要。
+- **今回の実施範囲は M0〜M3のみ。** M0: アプリ固有設定/Android 6対応/CI/署名・配送導線整備、M1: 2台相互発見と個別テキスト送受信、M2: 全端末同報・自分宛て・履歴・到着確認、M3: 常駐受信・切断/復帰・保留/再送・重複排除。ここまで実装・検査・PRレビュー・マージ・APK生成を継続する。
+- **全画面封書・開封確認・ファイル転送・家庭内放送・時限封書は製品要件として保持するが今回の実装範囲外**。Nearby Games連携も保留。今回の作業を理由に削除しない。
+- マイルストーン毎に自動テスト・静的検査・CIを回し、できれば独立レビュー（Copilot等）でP1/P2指摘を処理。自身のレビューだけで独立レビュー済みと書かない。P1未解決ならマージしない。
+- 実機検証できない部分は未検証と記録。実機確認を理由に実装可能な次段階を不必要に止めない。
+- 作業が中断しても再開できるよう `docs/WORK_PROGRESS.md` を更新。最終報告に commit/PR/CI/署名/APK/配送/実機検証を分離して記す。
+
+### 署名・配送の調査と指示
+
+- **署名用の4 Secrets は社長が既に登録済みと申告**。ただし「登録済み」という申告と、実際にCIで読み取れ署名できたことは別。今回確認した `.github/workflows/build-android-apk.yml` は `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` の全4個を要求し、欠ければビルド前に失敗する構成。**WorkはGitHubのSecrets名一覧（値は絶対読まない）または実際のActions成功＋署名検査によって有効性を確認**する。API権限が無ければ「登録状態は未確認」と明記。
+- 配送は **xiaqui/wolf-chess の docs/** に存在する以下の資料を**まず読んでから**開始する。共通の手順と事故防止策を使い、名前や固定IDは **ipmsg用に置換**すること。
+  1. `docs/APK_ARTIFACT_DELIVERY_GUIDE_JA.md`（現在の正本）
+  2. `docs/APK_DELIVERY_JA.md`（誤配送事故・ハッシュ照合）
+  3. `docs/BUILD_DELIVERY_COMPLETION_LOOP_JA.md`（実装→レビュー→ビルド→配送完走）
+  4. `docs/CODEX_AUTONOMOUS_DELIVERY_JA.md`（追加の一般手順）
+- `wolf-chess` 固有のDrive file ID、APKファイル名、artifact名を **ipmsgに流用しない**。現行ipmsg workflowのartifact名は `android-template-debug`。必要に応じて `ipmsg-debug` 等へ改称し、実際のrunに合わせて照合する。
+- ipmsg固有のDrive配送先が未確定なら、**独断で他アプリ用の固定Driveファイルを上書きしない**。GitHub Actions artifactとしてAPK完成まで進め、ipmsg専用配布先だけ未完了と明記する。権限が許せばipmsg用Driveファイルの新規作成と以後の固定ID運用を整備してよいが、既存ファイルの無断置換を避ける。
+- SHA → run ID → artifact ID → ZIP → APK → Drive（該当する場合）→再取得検証という鎖を維持する。
+
+### マイルストーンの受入条件
+
+| M | 受入条件 |
+|---|---|
+| M0 | 固有アプリIDと表示名、minSdk=23、ビルド/テスト、CIの署名検査、README整合。|
+| M1 | 相互発見・個別テキスト送受信が再現可能な手順/自動テスト付きで実装。|
+| M2 | 「全端末」目立つ導線、自分宛て、複数独立同報、保存履歴、受信到着ACKを検証。|
+| M3 | OS別に適法な常駐方法、Wi-Fi再接続・相手不在の保留/再送・重複排除を実装/検証。スリープ実機の確証は別途。|
+
+**M3終了時に必ず停止し、M4以降には進まない。**
+
+---
+
 ## 1. 目的と基本原則
 
 昔の IP Messenger のような、**同一家庭内 Wi-Fi/LAN で直接やりとりできる常駐型 Android メッセンジャー**を作る。
@@ -16,7 +53,7 @@ LINE風のアカウント制チャットやグループチャットではなく�
 - 端末側には名前を付ける。人物より**端末**を送信先の基本単位とする。
 - **基盤は既存の xiaqui/ipmsg（xiaqui/android を元に作成済み）**。別テンプレートから作り直さない。既存のビルド・署名・GitHub Actions を実態確認して必要な部分だけ改修する。
 - 2026-10-15確認時点、ipmsg の `app/build.gradle.kts` は `minSdk=26`、`namespace/applicationId=com.xiaqui.androidtemplate` のテンプレート値のまま。Android 6対応には `minSdk=23` に変更し、依存ライブラリや利用APIがAPI 23で動作することを検証する。ID/ラベル/プロジェクト名も専用値へ変更する。
-- 既存 README では APK は GitHub Actions artifact までで、**Google Drive配送は未設定**。固定Drive配送や恒久署名が完了しているとは扱わず、既存ワークフロー/Secretsを点検してから追加する。秘密情報や鍵はコミットしない。
+- 既存 README では APK は GitHub Actions artifact までで、**Google Drive配送は未設定**。署名用Secretsはユーザー申告では登録済みであり、workflow側は4つ必須。CI実行で有効性を確認する。ipmsg用Drive配送は専用固定先を確認してから追加する。秘密情報や鍵はコミットしない。
 
 ## 2. 送信先の選択（最重要）
 
