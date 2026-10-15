@@ -170,10 +170,14 @@ class MainActivity : Activity() {
         val edit=EditText(this).apply { setText(name());hint="この端末の名前" };box.addView(edit)
         box.addView(text("この端末の指紋（相手側の承認画面と全桁を照合）\n"+fingerprint(self),14f))
         box.addView(text("Wi-Fi内で直接通信します。ゲストWi-Fiの端末間分離では接続できません。消灯中の受信はOSや省電力設定の影響を受けます。",14f))
-        box.addView(button(if(MessengerService.active) "常駐受信を停止" else "常駐受信を開始") {
-            prefs.edit().putBoolean("enabled",!MessengerService.active).apply()
-            if(MessengerService.active) stopService(Intent(this,MessengerService::class.java)) else startReceiver()
-            renderPeers()
+        box.addView(Switch(this).apply {
+            text="常駐受信を有効にする（再起動後も再開）"
+            isChecked=prefs.getBoolean("enabled",false)
+            setOnCheckedChangeListener { _,enabled ->
+                prefs.edit().putBoolean("enabled",enabled).apply()
+                if(enabled) startReceiver() else stopService(Intent(this@MainActivity,MessengerService::class.java))
+                renderPeers()
+            }
         })
         if(Build.VERSION.SDK_INT>=33) box.addView(button("到着通知を許可") {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),10)

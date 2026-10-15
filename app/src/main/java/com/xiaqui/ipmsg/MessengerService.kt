@@ -29,8 +29,7 @@ class MessengerService : Service() {
             nm.createNotificationChannel(NotificationChannel("receiver","常駐受信",NotificationManager.IMPORTANCE_LOW))
             nm.createNotificationChannel(NotificationChannel("letters","手紙の到着",NotificationManager.IMPORTANCE_DEFAULT))
         }
-        val open = PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val open = MessengerNotifications.open(this,false)
         val notification = NotificationCompat.Builder(this,"receiver")
             .setSmallIcon(android.R.drawable.ic_dialog_email).setContentTitle("IP Messenger")
             .setContentText("LAN受信を有効にしています。停止はアプリの設定から")
@@ -55,8 +54,7 @@ class MessengerService : Service() {
     }
     private fun notifyLetter(letter: Letter) {
         if(!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
-        val open = PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java).putExtra("inbox",true),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val open = MessengerNotifications.open(this,true)
         try {
             NotificationManagerCompat.from(this).notify(2,NotificationCompat.Builder(this,"letters")
                 .setSmallIcon(android.R.drawable.ic_dialog_email).setContentTitle("IP Messenger：手紙が届きました")
@@ -81,4 +79,11 @@ class BootReceiver : BroadcastReceiver() {
             runCatching { MessengerService.start(context) }
         }
     }
+}
+
+object MessengerNotifications {
+    fun open(context: Context,inbox: Boolean): PendingIntent = PendingIntent.getActivity(
+        context,if(inbox) 1 else 0,
+        Intent(context,MainActivity::class.java).putExtra("inbox",inbox),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 }

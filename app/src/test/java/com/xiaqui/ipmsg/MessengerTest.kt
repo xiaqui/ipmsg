@@ -185,4 +185,14 @@ class MessengerTest {
         assertTrue(store.letters().isEmpty())
     }
 
+    @Test fun m3_arrivalRoutingSurvivesForegroundNotificationRecreation() {
+        val context=RuntimeEnvironment.getApplication() as Context
+        val foreground=MessengerNotifications.open(context,false)
+        val arrival=MessengerNotifications.open(context,true)
+        MessengerNotifications.open(context,false)
+        assertNotEquals(foreground,arrival)
+        assertFalse(org.robolectric.Shadows.shadowOf(foreground).savedIntent.getBooleanExtra("inbox",false))
+        assertTrue(org.robolectric.Shadows.shadowOf(arrival).savedIntent.getBooleanExtra("inbox",false))
+    }
+
 }

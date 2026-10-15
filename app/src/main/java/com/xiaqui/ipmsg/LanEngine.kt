@@ -189,6 +189,7 @@ class LanEngine(private val context: Context, private val store: Store,
                 try { connection.use { socket ->
                     socket.soTimeout = 5000
                     socket.connect(InetSocketAddress(peer.host,Protocol.PORT),3000)
+                    require(running.get() && store.peers().any { it.id == peer.id && it.trusted })
                     Protocol.write(DataOutputStream(socket.getOutputStream()),request)
                     val ack = Protocol.open(Protocol.read(DataInputStream(socket.getInputStream())),pair,recipient)
                     require(ack.getString("type") == "ACK" && ack.getString("id") == letter.id)

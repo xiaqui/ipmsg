@@ -40,3 +40,8 @@ JSON特殊文字の上限整合、active LAN prefix照合、SQLによる保留�
 初回CIは追加SDK actionが廃止済みtoolsを取得しようとして失敗 → runner既存SDKへ復帰。
 次のCIは存在しないRobolectric4.13.2指定で失敗 → 4.13へ修正（Junitは4.13.2のまま）。
 署名Secrets読込とalias確認はCIで成功。APK証明書照合・テスト最終結果は引き続き未確定。
+
+3回目Copilotレビュー（a34e396、review5535510316）は「0 open findings」表示だが、
+本文Previously missedにP2を3件記載していたため、合格とは扱わず修正：
+送信connect後・TEXT write直前に承認再確認、設定を有効状態のSwitchに変更、
+通知PendingIntentを常駐用と到着用で分離。通知再作成後も受信箱への導線が保たれる回帰検査を追加。
