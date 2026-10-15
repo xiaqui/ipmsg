@@ -48,3 +48,5 @@ API34以降 FOREGROUND_SERVICE_CONNECTED_DEVICE と CHANGE_WIFI_MULTICAST_STATE 
 - https://developer.android.com/about/versions/15/behavior-changes-15
 
 FGSだけでDoze中の即時配達を保証しない。スリープ時の確証は実機検収まで未確認。
+
+未承認候補の検査：64個の有効な署名付きIDを同じhostから投入しても候補は1件。他hostの正規端末が出現・承認できることを確認。候補は最大16件で古い候補を入れ替え、承認済み端末を削除しないことも検査。

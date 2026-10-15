@@ -195,4 +195,35 @@ class MessengerTest {
         assertTrue(org.robolectric.Shadows.shadowOf(arrival).savedIntent.getBooleanExtra("inbox",false))
     }
 
+    @Test fun m1_oneHostsCandidateFloodCannotBlockAnotherDevicesApproval() {
+        trust(alice,"approved")
+        repeat(64) { index ->
+            val identity=pair()
+            val now=100000L+index
+            val hello=Protocol.readHello(Protocol.hello("candidate "+index,identity,now),now)
+            store.discover(hello,"192.168.1.9",now)
+        }
+        assertEquals(1,store.peers().count { !it.trusted && it.host=="192.168.1.9" })
+        val legitimate=Protocol.readHello(Protocol.hello("legitimate",bob,100100),100100)
+        store.discover(legitimate,"192.168.1.10",100100)
+        assertTrue(store.peers().any { it.id==b })
+        assertTrue(store.peers().any { it.id==a && it.trusted })
+        store.trust(b,true)
+        assertTrue(store.peers().any { it.id==b && it.trusted })
+    }
+    @Test fun m1_candidateEvictionAdmitsNewPeersAndPreservesApprovedPeers() {
+        trust(alice,"approved")
+        repeat(20) { index ->
+            val identity=pair()
+            val now=100000L+index
+            store.discover(Protocol.readHello(Protocol.hello("candidate "+index,identity,now),now),
+                "192.168.1."+ (20+index),now)
+        }
+        store.discover(Protocol.readHello(Protocol.hello("new legitimate",carol,100100),100100),
+            "192.168.1.99",100100)
+        assertEquals(16,store.peers().count { !it.trusted })
+        assertTrue(store.peers().any { it.id==a && it.trusted })
+        assertTrue(store.peers().any { it.id==c })
+    }
+
 }

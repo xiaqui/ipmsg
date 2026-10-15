@@ -32,11 +32,21 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
             c.getInt(3) == 1,c.getString(4),c.getLong(5))) }
     }
     @Synchronized fun discover(hello: Protocol.Hello, host: String, now: Long) {
-        val old = peers().find { it.id == hello.id }
-        // Discovery is authenticated but replayable for two minutes. Never grants trust.
+        // Candidate admission is separate from approved peers. One source cannot reserve every slot.
         writableDatabase.delete("peers", "trusted=0 AND seen<?", arrayOf((now - 120000).toString()))
-        if (old == null && peers().size >= 64) return
+        val current = peers()
+        val old = current.find { it.id == hello.id }
         if (old != null && old.key != hello.key) return
+        if (old?.trusted != true) {
+            val candidates = current.filter { !it.trusted }
+            if (candidates.any { it.host == host && it.id != hello.id }) return
+            if (old == null && candidates.size >= 16) {
+                candidates.sortedBy { it.seen }.take(candidates.size - 15).forEach {
+                    // The UI can approve concurrently; never evict a peer that became approved.
+                    writableDatabase.delete("peers","id=? AND trusted=0",arrayOf(it.id))
+                }
+            }
+        }
         val db = writableDatabase
         // Insert once with default trust=false. Discovery never writes an existing trust flag.
         val initial = ContentValues().apply {
