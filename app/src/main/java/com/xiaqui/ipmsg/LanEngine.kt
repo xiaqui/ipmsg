@@ -176,10 +176,10 @@ class LanEngine(private val context: Context, private val store: Store,
         val messageId = body.getString("id")
         val text = body.getString("body")
         val fresh = store.receive(messageId,peer.id,peer.name,text)
+        if(fresh) runCatching { notifyLetter(Letter(messageId,peer.id,peer.name,text,true,
+            System.currentTimeMillis(),"RECEIVED",0,0)) }
         Protocol.write(DataOutputStream(socket.getOutputStream()),
             Protocol.seal(JSONObject().put("type","ACK").put("id",messageId),pair,Protocol.key(peer.key)))
-        if(fresh) notifyLetter(Letter(messageId,peer.id,peer.name,text,true,
-            System.currentTimeMillis(),"RECEIVED",0,0))
     }
     fun close() {
         running.set(false); udp?.close(); tcp?.close()
