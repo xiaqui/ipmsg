@@ -173,13 +173,13 @@ class MessengerTest {
     @Test fun m2_queueFailureRollsBackSelfAndEveryRecipient() {
         trust(bob,"B")
         store.writableDatabase.execSQL("CREATE TRIGGER fail_insert BEFORE INSERT ON letters WHEN NEW.peer='$b' BEGIN SELECT RAISE(ABORT,'simulated storage failure'); END")
-        assertThrows(IllegalStateException::class.java) { store.enqueue(listOf(a,b),a,"A","atomic") }
+        assertThrows(android.database.sqlite.SQLiteConstraintException::class.java) { store.enqueue(listOf(a,b),a,"A","atomic") }
         assertTrue(store.letters().isEmpty())
     }
     @Test fun m3_receiveStorageFailureCannotBeAcknowledged() {
         trust(bob,"B")
         store.writableDatabase.execSQL("CREATE TRIGGER fail_insert BEFORE INSERT ON letters BEGIN SELECT RAISE(ABORT,'simulated storage failure'); END")
-        assertThrows(IllegalStateException::class.java) {
+        assertThrows(android.database.sqlite.SQLiteConstraintException::class.java) {
             store.receive("00000000-0000-0000-0000-000000000004",b,"B","not saved")
         }
         assertTrue(store.letters().isEmpty())
