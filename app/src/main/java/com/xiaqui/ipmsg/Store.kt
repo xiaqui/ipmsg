@@ -75,11 +75,11 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
     @Synchronized fun receive(id: String,peer: String,name: String,body: String,
         now: Long = System.currentTimeMillis()): Boolean {
         require(Protocol.validMessageId(id) && Protocol.validText(body))
-        require(peers().any { it.id == peer && it.trusted })
         // Exceptions propagate: failed durable storage must never generate an ACK.
         val db = writableDatabase
         db.beginTransaction()
         try {
+            require(peers().any { it.id == peer && it.trusted })
             val inserted = insert(db,id,peer,name,body,true,now,"RECEIVED") != -1L
             if (!inserted) {
                 db.rawQuery("SELECT body FROM letters WHERE id=? AND peer=? AND incoming=1",

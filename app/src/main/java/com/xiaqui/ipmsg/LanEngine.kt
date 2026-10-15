@@ -30,9 +30,14 @@ class LanEngine(private val context: Context, private val store: Store,
     private val cm = context.getSystemService(ConnectivityManager::class.java)
     private val prefs = context.getSharedPreferences("settings",Context.MODE_PRIVATE)
     private val clock = Executors.newSingleThreadScheduledExecutor()
+    private val sender = Executors.newSingleThreadExecutor()
+    private val sending = AtomicBoolean(false)
+    private val sockets = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<Socket,Boolean>())
     private val workers = ThreadPoolExecutor(2,2,0,TimeUnit.SECONDS,ArrayBlockingQueue<Runnable>(8))
     @Volatile private var udp: DatagramSocket? = null
     @Volatile private var tcp: ServerSocket? = null
+    @Volatile private var discoveryReady = false
+    @Volatile private var messagesReady = false
     @Volatile var status = "受信準備中"
         private set
     private var multicast: WifiManager.MulticastLock? = null
@@ -70,7 +75,7 @@ class LanEngine(private val context: Context, private val store: Store,
             try {
                 DatagramSocket(null).use { socket ->
                     socket.reuseAddress = true; socket.bind(InetSocketAddress(Protocol.PORT))
-                    socket.soTimeout = 1000; udp = socket
+                    socket.soTimeout = 1000; udp = socket; discoveryReady = true
                     while(running.get()) {
                         try {
                             val packet = DatagramPacket(ByteArray(4097),4097)
@@ -87,7 +92,7 @@ class LanEngine(private val context: Context, private val store: Store,
                 }
             } catch(_: Exception) {
                 if(running.get()) SystemClock.sleep(1000)
-            } finally { udp = null }
+            } finally { udp = null; discoveryReady = false }
         }
     }
     private fun listenMessages() {
@@ -95,20 +100,24 @@ class LanEngine(private val context: Context, private val store: Store,
             try {
                 ServerSocket().use { server ->
                     server.reuseAddress = true; server.bind(InetSocketAddress(Protocol.PORT)); server.soTimeout = 1000
-                    tcp = server
+                    tcp = server; messagesReady = true
                     while(running.get()) {
                         try {
                             val socket = server.accept()
                             socket.soTimeout = 5000
                             if(!local(socket.inetAddress) || networks().isEmpty()) { socket.close(); continue }
-                            try { workers.execute { socket.use { runCatching { receive(it) } } } }
-                            catch(_: java.util.concurrent.RejectedExecutionException) { socket.close() }
+                            sockets.add(socket)
+                            try { workers.execute {
+                                try { socket.use { if(running.get()) runCatching { receive(it) } } }
+                                finally { sockets.remove(socket) }
+                            } }
+                            catch(_: java.util.concurrent.RejectedExecutionException) { sockets.remove(socket);socket.close() }
                         } catch(_: java.net.SocketTimeoutException) { }
                     }
                 }
             } catch(_: Exception) {
                 if(running.get()) SystemClock.sleep(1000)
-            } finally { tcp = null }
+            } finally { tcp = null; messagesReady = false }
         }
     }
     private fun tick() {
@@ -136,16 +145,24 @@ class LanEngine(private val context: Context, private val store: Store,
                 }
             }
         }
-        status = "受信待機中・承認済み " + store.peers().count { it.trusted && it.online(System.currentTimeMillis()) } + "台"
-        val available = store.peers().filter { it.trusted && it.online(System.currentTimeMillis()) }.associateBy { it.id }
-        store.pending(System.currentTimeMillis()).filter { it.peer in available }.takeLast(16).forEach { letter ->
-            if(!running.get()) return
-            val peer = store.peers().find { it.id == letter.peer && it.trusted && it.online(System.currentTimeMillis()) }
-                ?: return@forEach
-            store.attempted(letter,System.currentTimeMillis())
-            runCatching { send(letter,peer,nets) }
+        status = if(!discoveryReady || !messagesReady) "受信用ポート42124を準備／再試行中" else "受信待機中・承認済み " + store.peers().count { it.trusted && it.online(System.currentTimeMillis()) } + "台"
+        // Never block discovery heartbeats behind slow/offline recipients.
+        if(sending.compareAndSet(false,true)) {
+            try { sender.execute {
+                try {
+                    val available = store.peers().filter { it.trusted && it.online(System.currentTimeMillis()) }.map { it.id }.toSet()
+                    store.pending(System.currentTimeMillis()).filter { it.peer in available }.takeLast(16).forEach { letter ->
+                        if(!running.get()) return@execute
+                        val peer = store.peers().find { it.id == letter.peer && it.trusted && it.online(System.currentTimeMillis()) }
+                            ?: return@forEach
+                        store.attempted(letter,System.currentTimeMillis())
+                        runCatching { send(letter,peer,networks()) }
+                    }
+                } finally { sending.set(false) }
+            } } catch(_: java.util.concurrent.RejectedExecutionException) { sending.set(false) }
         }
     }
+
     private fun send(letter: Letter,peer: Peer,nets: List<Network>) {
         val recipient = Protocol.key(peer.key)
         val request = Protocol.seal(JSONObject().put("type","TEXT").put("id",letter.id)
@@ -154,7 +171,9 @@ class LanEngine(private val context: Context, private val store: Store,
         nets.forEach { network ->
             if(!running.get()) return
             val success = runCatching {
-                network.socketFactory.createSocket().use { socket ->
+                val connection = network.socketFactory.createSocket()
+                sockets.add(connection)
+                try { connection.use { socket ->
                     socket.soTimeout = 5000
                     socket.connect(InetSocketAddress(peer.host,Protocol.PORT),3000)
                     Protocol.write(DataOutputStream(socket.getOutputStream()),request)
@@ -162,7 +181,7 @@ class LanEngine(private val context: Context, private val store: Store,
                     require(ack.getString("type") == "ACK" && ack.getString("id") == letter.id)
                     require(store.peers().any { it.id == peer.id && it.trusted })
                     store.delivered(letter.id,peer.id)
-                }
+                } } finally { sockets.remove(connection) }
             }.isSuccess
             if(success) return
         }
@@ -183,7 +202,8 @@ class LanEngine(private val context: Context, private val store: Store,
     }
     fun close() {
         running.set(false); udp?.close(); tcp?.close()
-        clock.shutdownNow(); workers.shutdownNow()
+        clock.shutdownNow(); sender.shutdownNow(); workers.shutdownNow()
+        sockets.forEach { runCatching { it.close() } }; sockets.clear()
         if(callbackRegistered) runCatching { cm.unregisterNetworkCallback(callback) }
         multicast?.let { if(it.isHeld) it.release() }
         store.offline()
