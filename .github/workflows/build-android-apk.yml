@@ -61,7 +61,16 @@ jobs:
           grep -q "sdkVersion:'23'" badging.txt
           cp "$APK" ipmsg-debug.apk
           sha256sum ipmsg-debug.apk > SHA256SUMS
-          printf 'source_sha=%s\\nrun_id=%s\\n' "$SOURCE_SHA" "$GITHUB_RUN_ID" > provenance.txt
+          printf 'source_sha=%s\nrun_id=%s\n' "$SOURCE_SHA" "$GITHUB_RUN_ID" > provenance.txt
+          printf 'apk_size=%s\n' "$(stat -c %s ipmsg-debug.apk)" >> provenance.txt
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          results = [ET.parse(p).getroot() for p in pathlib.Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml")]
+          total = sum(int(r.get("tests", 0)) for r in results)
+          failures = sum(int(r.get("failures", 0)) + int(r.get("errors", 0)) for r in results)
+          assert total >= 39 and failures == 0, (total, failures)
+          print(f"Unit test results: {total} tests, {failures} failures/errors")
+          PY
           cat signing.txt SHA256SUMS provenance.txt
       - uses: actions/upload-artifact@v4
         with:
