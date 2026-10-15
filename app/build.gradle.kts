@@ -3,14 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 android {
-    namespace = "com.xiaqui.androidtemplate"
+    namespace = "com.xiaqui.ipmsg"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.xiaqui.androidtemplate"
-        minSdk = 26
+        applicationId = "com.xiaqui.ipmsg"
+        minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
     signingConfigs {
         create("delivery") {
@@ -33,9 +33,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    testOptions { unitTests.isIncludeAndroidResources = true }
+    lint { abortOnError = true; checkReleaseBuilds = true }
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.13.2")
 }
