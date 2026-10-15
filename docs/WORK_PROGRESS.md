@@ -1,7 +1,7 @@
 # Work進捗・再開手順
 
 更新: 2026-10-16 JST（CI記録は2026-10-15 UTC）
-状態: **M0〜M3の実装・mainマージ・自動検査・署名APK生成まで完了。Drive配送と実機検証は未完了。M4以降には進んでいない。**
+状態: **M0〜M3の実装・mainマージ・自動検査・署名APK生成・Google Drive配送まで完了。実機検証は未完了。M4以降には進んでいない。**
 
 ## 実装／コミット／PR
 
@@ -59,31 +59,34 @@ Secretsの値／秘密鍵は取得・記録していない。
 | artifact ZIP SHA-256 | f7cea44afbbbdea41c2c438f3e79cff389ec932050a5f0e48327fc0d278a16bf |
 | ZIP内のAPK | ipmsg-debug.apk |
 | 実APKサイズ（CIで確認） | 2,105,118 bytes |
-| 実APK SHA-256（CIで確認） | 6ffef378b2d11152aed6eaedd2af7979aca41ec2125cc198c95ceb8d88421a0f |
+| 実APK SHA-256（CI／Drive再取得で確認） | 6ffef378b2d11152aed6eaedd2af7979aca41ec2125cc198c95ceb8d88421a0f |
+| Driveファイル名／固定ID | ipmsg-debug.apk / 1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN |
+| Drive URL | https://drive.google.com/file/d/1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN/view |
+| Drive配送日時 | 2026-10-16 02:44 JST（2026-10-15 17:44 UTC） |
 | 検査artifact | ipmsg-checks / 11986371376 |
 
 配布リンク: https://github.com/xiaqui/ipmsg/actions/runs/38761412863/artifacts/11986061803
 
 ZIPにはAPKのほかSHA256SUMS、provenance.txt、signing.txt、badging.txtを収録。
-ZIPの認証済みダウンロード参照の取得まで成功。**ローカルZIP展開・APK再取得ハッシュ照合・Driveアップロード／Drive再取得は未実施。ZIPをAPKに改名していない。**
-ipmsg専用のDrive固定file IDは未作成。他アプリのDriveファイルは一切上書きしていない。
+2026-10-16 JSTにartifact ZIPを再取得・展開し、ZIP内の実APKをDriveへ新規配送した。Drive上に同名 `ipmsg-debug.apk` が存在しないことを事前確認し、wolf-chess等の他アプリ用固定ファイルは上書きしていない。
+Driveから再取得したAPKは **2,105,118 bytes**、SHA-256 `6ffef378b2d11152aed6eaedd2af7979aca41ec2125cc198c95ceb8d88421a0f` で、展開元とbyte-for-byte一致した。今後は上記固定IDを更新して同じURLを維持する。
 
-### 配送が止まった環境上の理由
+### 前回配送が止まった環境上の理由（解消済み）
 
 1. 初期Windows環境でgit cloneは `getaddrinfo() thread failed to start`、gh認証はinvalid。接続済みGitHub APIで実装・PR・CIを完走。
 2. artifact取得URLをWindowsで取得しようとして名前解決に失敗。Node／ブラウザの実行系もTransport closed。
 3. 途中でクラウドLinux環境に切替後も、権限設定に旧Windowsパスが残り、`workdir=/tmp, shell=/bin/bash`でもコマンド開始前に次のエラー：
    `invalid sandbox permission path URI: file:///C:/Users/xiaqu/Documents/Codex/2026-10-15/new-chat is invalid on linux`
 4. 権限の迂回や鍵・トークンの取り出しは行っていない。GitHub APIでのAPK完成と記録までは進めた。
+5. 2026-10-16 JSTの再開時にはLinux実行が正常化し、取得・展開・照合・Drive配送・Drive再取得照合を完了した。
 
-### 配送だけを再開する場合
+### 次回以降の固定URL配送
 
-1. 実行環境のパス／権限の不整合が直ったセッションで上記run/artifactを再取得。
-2. ZIP SHA-256を照合して展開し、実APKの2,105,118 bytes／SHA-256を照合。
-3. Google Driveを検索してipmsg専用固定先の有無を確認。無ければ新規専用APKファイルを作成してそのIDを保存する。wolf-chess等の固定IDは使わない。
-4. MIME `application/vnd.android.package-archive`、名前 `ipmsg-debug.apk` で実APKを配送。
-5. Driveを再取得し、同一file ID・サイズ・更新時刻・可能ならSHA-256を照合。次回以降は同じIDへ更新。
-6. この文書とREADMEへ固定ID／URL・実際の配送／再取得結果を追記。
+1. 対象main SHAと成功run/artifactを確定し、ZIPを取得。
+2. ZIP内の実APKを展開し、CI記録のサイズ／SHA-256と照合。ZIPそのものをAPK名にしない。
+3. Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` の現在メタデータとファイル名 `ipmsg-debug.apk` を確認。
+4. MIME `application/vnd.android.package-archive` の実APKで同じ固定IDを更新し、URLを維持。
+5. Driveから再取得し、サイズ・SHA-256・byte-for-byte一致を確認して本書を更新。
 
 wolf-chessの配送正本・事故例・完走ループ・自走配送資料の4本は参照済み。新しいツール定義を優先する。
 
