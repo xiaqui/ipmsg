@@ -1,7 +1,7 @@
 # TASK.md — 家庭内 IP Messenger 仕様書・実装指示書
 
 更新日: 2026-10-16（JST）
-状態: **M0〜M3は実装・mainマージ・CI・署名APK生成まで完了**。Drive配送と実機検証は未完了。最新のSHA／PR／run／artifact／再開手順は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
+状態: **M0〜M3は実装・mainマージ・CI・署名APK生成・Google Drive配送まで完了**。実機検証は未完了。最新のSHA／PR／run／artifact／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
 
 ## 0. 今回の Work 実行指示（最優先・この節を読めば着手できる）
 
