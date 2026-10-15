@@ -1,9 +1,21 @@
 # TASK.md — 家庭内 IP Messenger 仕様書・実装指示書
 
 更新日: 2026-10-16（JST）
-状態: **M0〜M3は実装・mainマージ・CI・署名APK生成・Google Drive配送まで完了**。実機検証は未完了。最新のSHA／PR／run／artifact／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
+状態: **M0〜M3は実装・mainマージ・CI・署名APK生成・Google Drive配送まで完了**。次はWindows版の設計とAndroid実機検証。実機検証は未完了。最新のSHA／PR／run／artifact／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
 
-## 0. 今回の Work 実行指示（最優先・この節を読めば着手できる）
+## 0. 次期開発指示（2026-10-16改訂・現行の最優先指示）
+
+**旧「今回のWork実行指示：M0〜M3実装」は完了済みの履歴であり、再実行しない。**
+- 優先: Android → Windows → iOS。Android 6.0対応とM0〜M3機能を維持。
+- **M0〜M3実装・PR #2マージ・48件自動テスト・Copilot4回・署名APK生成・Google Drive配送は完了。** main実装SHA `57e627dd03edde76f53be10f178be74088ada38f`、run `38761412863`、artifact `11986061803`、Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN`。APK配送済みで再配送は不要。出典は `docs/WORK_PROGRESS.md`。Android実機検証と最終修正差分への独立再レビューは未完了。
+- 今回の作業: (1) 既存コード/履歴確認 (2) `docs/ANDROID_DEVICE_ACCEPTANCE_JA.md` の実機検証手順整備 (3) `docs/SHARED_PROTOCOL_SPEC_JA.md` へ実装由来のv1仕様整理 (4) `docs/WINDOWS_CLIENT_SPEC_JA.md`・`docs/FILE_TRANSFER_SPEC_JA.md`・`docs/MULTIPLATFORM_ROADMAP_JA.md`・`docs/WINDOWS_BUILD_DELIVERY_JA.md`・`docs/IOS_FUTURE_PLAN_JA.md` 作成 (5) TASK.md/AGENTS.md更新 (6) レビュー後にPRをマージ。
+- **Windows版の本格実装・iOS版実装・APK再配送は今回禁止。** Android実機で2台の双方向基本通信が成立し、ユーザーが別途明示的にWindows実装を指示してからM5に着手する。
+- Windowsの技術候補は Python + PySide6。ただし.NET等と比較し正式決定。Androidの既存探索/鍵指紋相互承認/暗号化/ACK/再送/重複排除を共有し、独自の非互換プロトコルを作らない。
+- Windows版には双方向自動発見・認証・テキスト/同報/自分宛て/履歴/ACK/再送/トレイ/通知/任意自動起動。ファイル転送はWindows開発と並行して共通仕様を策定。
+- マイルストーン正式案: M4 Windows通信仕様・設計（今回文書のみ）、M5 Windows基本送受信、M6 Android-Windowsファイル転送、M7重要便/開封/返信、M8 iOS、M9家庭内放送/時限封書。M5以降は実機成功と別途指示がゲート。
+- 進捗・レビュー・配送証跡を消さず、実装/テスト/レビュー/マージ/配送/実機検証は別々に報告する。
+
+## 0-A. 以前の Work 実行指示（M0〜M3完了・履歴として保持）（最優先・この節を読めば着手できる）
 
 **Workへのユーザー指示は「TASK.mdを読んで作業して」だけを想定する。この節とルートの `AGENTS.md` を読み、次のM3まで自走実装すること。着手前の逐次確認は不要。**
 
@@ -36,7 +48,7 @@
 | M2 | 「全端末」目立つ導線、自分宛て、複数独立同報、保存履歴、受信到着ACKを検証。|
 | M3 | OS別に適法な常駐方法、Wi-Fi再接続・相手不在の保留/再送・重複排除を実装/検証。スリープ実機の確証は別途。|
 
-**M3終了時に必ず停止し、M4以降には進まない。**
+**上記は旧M0〜M3実装タスクの終了条件（達成済み）。今回の新規指示の実行範囲は先頭の「次期開発指示」が優先する。**
 
 ---
 
@@ -46,7 +58,7 @@
 LINE風のアカウント制チャットやグループチャットではなく、**相手端末へ手紙・ファイルを届ける**道具とする。
 
 - 最低 Android 6.0 (API 23)、Android 14までの実機動作を初期検証範囲にする。将来の OS も考慮。
-- 最初は Android のみ。iPhone・Windows 対応は将来検討。
+- 対応計画は **Android → Windows → iOS**。Androidは先行実装済み、Windowsが次の重点対象、iOSはWindows安定後。
 - 家庭内LANで完結し、通信にクラウド/外部サーバー/アカウント/電話番号/インターネット接続を要求しない。
 - 中央サーバー役や固定ホストを置かない。各端末が P2P で発見・受信・送信できる。
 - UI は簡単に。**「全端末」宛てを最も目立つ場所に置く**。
