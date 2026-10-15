@@ -67,7 +67,7 @@ class MainActivity : Activity() {
         peersView=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL };root.addView(peersView)
         selectionView=text("");root.addView(selectionView)
         composer=EditText(this).apply {
-            id=1001;hint="手紙を書く（UTF-8で8KBまで）";minLines=3;maxLines=10
+            id=R.id.composer;hint="手紙を書く（UTF-8で8KBまで）";minLines=3;maxLines=10
             inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         };root.addView(composer)
         root.addView(button("宛先を確認して送信") { confirmSend() })
