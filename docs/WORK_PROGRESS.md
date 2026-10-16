@@ -1,26 +1,30 @@
 # Work進捗・再開手順
 
-更新: 2026-10-16 JST（CI記録は2026-10-15 UTC）
-状態: **M0〜M3の既存配送後、Android実機LAN探索・オンライン判定を優先修正中。Windows版は開始していない。修正後APKの実機検証は未完了。**
+更新: 2026-10-17 JST（最新CI記録は2026-10-16 UTC）
+状態: **Android実機LAN探索・オンライン判定の診断／局所修正をPR #4でmainへマージ済み。Windows版は開始していない。Artifact容量回復後のAPK生成・配送と実機検証が未完了。**
 
 ## Android LAN探索・オンライン判定修正（2026-10-17 JST）
 
 - PR: https://github.com/xiaqui/ipmsg/pull/4
 - 作業ブランチ: `fix/android-lan-diagnostics`
-- この文書更新時の実装HEAD: `39c2edf1ad2486cfe4a9ea6a2ed14aa66d61be3b`（後続の文書コミットを除く）
-- 完成main SHA: **PR #4マージ後にこの欄へ確定記入する。**
+- PR最終HEAD: `e31475abf2143b970592cb8764bcd8885608547a`
+- 完成main実装SHA（squash merge）: `38e5c831c2ab03ab44fb1ab412f69b673a528c57`
+- PRマージ日時: 2026-10-17 JST（2026-10-16 UTC）
 - 実機観測: Xperia XZ1 CompactはONLINE判定が不安定。Rakuten Handとの通信成功例あり。Ace III宛ては保留0回のままで、TCP失敗ではなくONLINE判定前で止まっている可能性が高い。
 - Nearby GamesのNSD修正と比較。両者ともMulticastLockを必要とするが、ipmsgはNSDではなく署名付きUDPブロードキャストを使用する。
 - 原因: `ConnectivityManager.NetworkCallback` の利用可能／LinkProperties変更のたびに全peerの `seen` を0にしており、実機のcallback churnでONLINEがちらついた。
 - 局所修正: 通常callbackでは最終発見を保持し、全LAN消失または有効IPv4 prefix membership喪失時だけoffline化。callback時は即時hello／保留再評価。MulticastLock取得失敗は可視化して探索サービスを継続。
 - LAN診断: UDP送受信、helloの検証成功／拒否段階、端末別最終発見時刻、TCP送信試行／接続／接続失敗、TCP受信、ACK送受信／送信・ACK段階失敗、VPN、LAN prefix、受信ポート、保留／オンライン待ちを表示。本文・公開鍵・秘密鍵は含めない。
-- 独立レビュー: 初回P1 1件（テスト期待文字列）とP2 2件（TCP/ACK段階の未配線、prefix変更時の旧ONLINE保持）を検出し、実装／回帰テストへ反映。最終HEAD再レビュー結果はマージ前に確定する。
+- 独立レビュー: TCP/ACK段階未分離、prefix変更／複数LAN／IPv4消失、テスト期待値、Unicode制御文字による診断行偽装を検出し、全て実装／回帰テストへ反映。最終HEAD `e31475a` の再レビューは残存P1/P2なし。
+- GitHub自動レビューのP1「Android実装は旧フェーズ範囲外」は、今回のユーザー明示指示とTASK.md先頭の現行指示で非該当。P2の診断端末名制御文字はASCII／Unicode区切り／bidi FORMATをコードポイント単位で可視エスケープして解決。2つのinline threadは返信・解決済み。
+- 最終PR CI: https://github.com/xiaqui/ipmsg/actions/runs/38925651415 （job `117056381967`）。57件、失敗0、未実行0。Lint／assembleDebug／署名検査／package／minSdk検査は成功。job全体のfailureはArtifact upload 2件だけ。
+- CIが一時生成した未配送APK: 2,118,074 bytes、SHA-256 `e217dde615650ae910dcd0dd69b0004843c6bee916bed2f3f734f817bbfbe138`。Artifact作成前に容量上限で失敗したため、このAPKは取得・配送可能な完成物として扱わない。
 - Windows版開発は未着手。この修正ではAndroidコードと関連文書以外を変更しない。
 - 詳細な実機採取項目: [ANDROID_DEVICE_ACCEPTANCE_JA.md](ANDROID_DEVICE_ACCEPTANCE_JA.md)
 
 ### Artifact容量制限中の扱い
 
-GitHub ActionsのArtifactストレージ容量制限によるupload失敗は既知の環境要因であり、開発停止条件にしない。unit test、Lint、assembleDebug、署名／badging／SHA検査までの結果を合否判断し、artifact uploadだけの失敗は分離して記録する。容量回復前に古いAPKを修正版として再配送しない。
+GitHub ActionsのArtifactストレージ容量制限によるupload失敗は既知の環境要因であり、開発停止条件にしない。unit test、Lint、assembleDebug、署名／badging／SHA検査までの結果を合否判断し、artifact uploadだけの失敗は分離して記録する。容量回復前に古いAPKを修正版として再配送しない。 最終run `38925651415` では `ipmsg-debug` と `ipmsg-checks` の両uploadが `Artifact storage quota has been hit. Usage is recalculated every 6-12 hours.` で失敗した。
 
 ### 容量回復後のAPK生成・固定URL配送再開
 
