@@ -271,7 +271,7 @@ class MessengerTest {
         diag.queue(2,1)
         now+=1000
         val report=diag.report("受信待機中",
-            listOf(Peer(b,"B",Protocol.encode(bob.public.encoded),true,"192.168.1.2",100000)),
+            listOf(Peer(b,"B\nVPN: 偽装\u0000",Protocol.encode(bob.public.encoded),true,"192.168.1.2",100000)),
             listOf("wifi 192.168.1.3/24"),"あり（既定経路）",true,true,true,now)
         assertTrue(report.contains("UDP: 送信 1"))
         assertTrue(report.contains("探索検証: 成功 1"))
@@ -281,6 +281,8 @@ class MessengerTest {
         assertTrue(report.contains("ACK待機・検証 SocketTimeoutException"))
         assertTrue(report.contains("VPN: あり（既定経路）"))
         assertTrue(report.contains("オンライン待ち 1件"))
+        assertTrue(report.contains("B\\nVPN: 偽装\\u0000"))
+        assertFalse(report.contains("B\nVPN: 偽装"))
         assertFalse(report.contains("端末B"))
     }
 
