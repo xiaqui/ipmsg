@@ -48,17 +48,32 @@ object Protocol {
             .toString().toByteArray(Charsets.UTF_8)
     }
     data class Hello(val id: String, val name: String, val key: String)
+    class HelloValidationException(val stage: String, cause: Throwable? = null) :
+        IllegalArgumentException(stage,cause)
     fun readHello(bytes: ByteArray, now: Long): Hello {
-        require(bytes.size <= 4096)
-        val packet = JSONObject(String(bytes, Charsets.UTF_8))
-        val body = packet.getString("body")
-        val data = JSONObject(body)
-        require(data.getInt("v") == 1)
-        val time = data.getLong("time")
-        require(time in (now - 120000)..(now + 120000))
-        val publicKey = key(data.getString("key"))
-        require(verify(body, packet.getString("sig"), publicKey))
-        return Hello(id(publicKey), data.getString("name").take(40), encode(publicKey.encoded))
+        var stage = "サイズ"
+        try {
+            if(bytes.size > 4096) throw HelloValidationException(stage)
+            stage = "JSON"
+            val packet = JSONObject(String(bytes, Charsets.UTF_8))
+            val body = packet.getString("body")
+            val data = JSONObject(body)
+            stage = "バージョン"
+            if(data.getInt("v") != 1) throw HelloValidationException(stage)
+            stage = "時刻"
+            val time = data.getLong("time")
+            if(time !in (now - 120000)..(now + 120000)) throw HelloValidationException(stage)
+            stage = "公開鍵"
+            val publicKey = key(data.getString("key"))
+            stage = "署名"
+            if(!verify(body, packet.getString("sig"), publicKey)) throw HelloValidationException(stage)
+            stage = "端末名"
+            return Hello(id(publicKey), data.getString("name").take(40), encode(publicKey.encoded))
+        } catch(e: HelloValidationException) {
+            throw e
+        } catch(e: Exception) {
+            throw HelloValidationException(stage,e)
+        }
     }
     /** RSA-OAEP wraps a fresh AES-256 key; GCM authenticates ciphertext; RSA pins sender. */
     fun seal(body: JSONObject, sender: KeyPair, recipient: PublicKey): ByteArray {
