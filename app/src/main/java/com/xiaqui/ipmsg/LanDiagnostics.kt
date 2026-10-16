@@ -18,6 +18,8 @@ internal class LanDiagnostics(private val clock: () -> Long = System::currentTim
     private val tcpAttempt = AtomicLong()
     private val tcpConnected = AtomicLong()
     private val tcpFailed = AtomicLong()
+    private val tcpIncoming = AtomicLong()
+    private val deliveryFailed = AtomicLong()
     private val ackReceived = AtomicLong()
     private val ackSent = AtomicLong()
     private val events = ArrayDeque<String>()
@@ -52,7 +54,14 @@ internal class LanDiagnostics(private val clock: () -> Long = System::currentTim
     }
     fun tcpFailed(peer: String, reason: String) {
         tcpFailed.incrementAndGet(); lastTcp = clock()
-        lastTcpFailure = reason.take(80); event("TCP失敗", peer.take(8)+" "+lastTcpFailure)
+        lastTcpFailure = reason.take(80); event("TCP接続失敗", peer.take(8)+" "+lastTcpFailure)
+    }
+    fun tcpIncoming(peer: String) {
+        tcpIncoming.incrementAndGet(); lastTcp = clock(); event("TCP受信",peer.take(8))
+    }
+    fun deliveryFailed(peer: String, stage: String, reason: String) {
+        deliveryFailed.incrementAndGet(); lastTcpFailure=(stage+" "+reason).take(80)
+        event("配送失敗",peer.take(8)+" "+lastTcpFailure)
     }
     fun ackReceived(peer: String) {
         ackReceived.incrementAndGet(); lastAck = clock(); event("ACK受信", peer.take(8))
@@ -92,8 +101,10 @@ internal class LanDiagnostics(private val clock: () -> Long = System::currentTim
             appendLine("LAN: "+if(networks.isEmpty()) "なし" else networks.joinToString(" | "))
             appendLine("UDP: 送信 "+udpTx.get()+"（最終 "+age(now,lastUdpTx)+"） / 受信 "+udpRx.get()+"（最終 "+age(now,lastUdpRx)+"）")
             appendLine("探索検証: 成功 "+helloOk.get()+"（最終 "+age(now,lastHelloOk)+"） / 拒否 "+helloRejected.get()+"（最終 "+lastReject+"）")
-            appendLine("TCP: 試行 "+tcpAttempt.get()+" / 接続 "+tcpConnected.get()+" / 失敗 "+tcpFailed.get()+"（最終 "+lastTcpFailure+"）")
-            appendLine("ACK: 受信 "+ackReceived.get()+" / 送信 "+ackSent.get()+"（最終 "+age(now,lastAck)+"）")
+            appendLine("TCP送信: 試行 "+tcpAttempt.get()+" / 接続 "+tcpConnected.get()+" / 接続失敗 "+tcpFailed.get())
+            appendLine("TCP受信: "+tcpIncoming.get())
+            appendLine("ACK: 受信 "+ackReceived.get()+" / 送信 "+ackSent.get()+" / ACK・送信段階失敗 "+deliveryFailed.get()+
+                "（最終 "+lastTcpFailure+"、ACK最終 "+age(now,lastAck)+"）")
             appendLine("保留: "+pending+"件（オンライン待ち "+waitingOffline+"件）")
             appendLine("端末別:")
             appendLine(peerLines)
