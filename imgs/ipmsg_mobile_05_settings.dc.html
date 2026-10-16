@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>設定</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; background: #F3F5F4; color: #16231F; font-family: 'IBM Plex Sans JP', 'Hiragino Sans', 'Noto Sans JP', sans-serif">
+
+<header style="flex: none; padding: 20px 20px 12px">
+<h1 style="margin: 0; font-size: 26px; font-weight: 700; line-height: 1.2">設定</h1>
+</header>
+
+<main style="flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 20px; padding: 4px 20px 0">
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 700; color: #5B6B66">プロフィール</h2>
+<div style="display: flex; flex-direction: column; background: #fff; border: 1px solid #DDE3E0; border-radius: 12px">
+<label style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; box-sizing: border-box; border-bottom: 1px solid #EAEEEC"><span style="width: 84px; font-size: 14px; color: #5B6B66; flex: none">表示名</span><input value="山田 太郎" style="flex: 1; min-width: 0; height: 44px; border: 0; outline: 0; background: transparent; font: inherit; font-size: 15px; color: #16231F"></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; box-sizing: border-box"><span style="width: 84px; font-size: 14px; color: #5B6B66; flex: none">グループ</span><input value="営業部" style="flex: 1; min-width: 0; height: 44px; border: 0; outline: 0; background: transparent; font: inherit; font-size: 15px; color: #16231F"></label>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 700; color: #5B6B66">ネットワーク</h2>
+<div style="display: flex; flex-direction: column; background: #fff; border: 1px solid #DDE3E0; border-radius: 12px">
+<label style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; box-sizing: border-box; border-bottom: 1px solid #EAEEEC"><span style="width: 84px; font-size: 14px; color: #5B6B66; flex: none">ブロードキャスト</span><input value="192.168.1.255" style="flex: 1; min-width: 0; height: 44px; border: 0; outline: 0; background: transparent; font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #16231F; text-align: right"></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; box-sizing: border-box"><span style="width: 84px; font-size: 14px; color: #5B6B66; flex: none">ポート</span><input value="2425" style="flex: 1; min-width: 0; height: 44px; border: 0; outline: 0; background: transparent; font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #16231F; text-align: right"></label>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 700; color: #5B6B66">通知とセキュリティ</h2>
+<div style="display: flex; flex-direction: column; background: #fff; border: 1px solid #DDE3E0; border-radius: 12px">
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 16px; box-sizing: border-box; border-bottom: 1px solid #EAEEEC">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 500">不在モード</span><span style="font-size: 12px; color: #5B6B66">届いたメッセージに自動で返信します</span></span>
+<input type="checkbox" style="width: 24px; height: 24px; margin: 0; accent-color: #0F766E"></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 16px; box-sizing: border-box; border-bottom: 1px solid #EAEEEC">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 500">受信時に通知する</span><span style="font-size: 12px; color: #5B6B66">通知音と画面表示でお知らせします</span></span>
+<input type="checkbox" checked style="width: 24px; height: 24px; margin: 0; accent-color: #0F766E"></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 16px; box-sizing: border-box; border-bottom: 1px solid #EAEEEC">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 500">開封確認に応答する</span><span style="font-size: 12px; color: #5B6B66">封書を開いたことを送信者に伝えます</span></span>
+<input type="checkbox" checked style="width: 24px; height: 24px; margin: 0; accent-color: #0F766E"></label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 16px; box-sizing: border-box">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 500">暗号化して送受信</span><span style="font-size: 12px; color: #5B6B66">対応している相手との通信を暗号化します</span></span>
+<input type="checkbox" checked style="width: 24px; height: 24px; margin: 0; accent-color: #0F766E"></label>
+</div>
+</section>
+
+</main>
+
+<nav aria-label="メインメニュー" style="flex: none; display: flex; height: 64px; background: #fff; border-top: 1px solid #DDE3E0">
+<a href="Main.dc.html" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #5B6B66; font-size: 12px">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.65a3.5 3.5 0 0 1 0 6.7"/></svg>メンバー
+</a>
+<a href="Received.dc.html" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #5B6B66; font-size: 12px">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2.5-7h13L21 13v6H3z"/><path d="M3 13h5l1 2h6l1-2h5"/></svg>受信箱
+</a>
+<a href="Settings.dc.html" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #0F766E; font-size: 12px; font-weight: 700">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>設定
+</a>
+</nav>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

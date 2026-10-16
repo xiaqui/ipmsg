@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>メンバー一覧</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; background: #F3F5F4; color: #16231F; font-family: 'IBM Plex Sans JP', 'Hiragino Sans', 'Noto Sans JP', sans-serif">
+
+<header style="flex: none; padding: 20px 20px 12px; display: flex; flex-direction: column; gap: 12px; background: #F3F5F4">
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 2px">
+<h1 style="margin: 0; font-size: 26px; font-weight: 700; line-height: 1.2">メンバー</h1>
+<span style="font-size: 13px; color: #5B6B66">社内LAN · 6台を検出</span>
+</div>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #0B5A54; background: #D8EEEA; padding: 4px 10px; border-radius: 12px">192.168.1.0/24</span>
+</div>
+<div style="display: flex; align-items: center; gap: 10px; height: 44px; box-sizing: border-box; padding: 0 14px; background: #fff; border: 1px solid #DDE3E0; border-radius: 12px">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5B6B66" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+<input aria-label="メンバーを検索" placeholder="名前・ホスト名・IPで検索" style="flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 15px; color: #16231F">
+</div>
+</header>
+
+<main style="flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column">
+
+<div style="padding: 10px 20px 6px; display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #5B6B66"><span>営業部</span><span style="font-weight: 400">3</span></div>
+
+<a href="Chat.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 10px 20px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #16231F; background: #fff; border-bottom: 1px solid #EAEEEC">
+<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 20px; background: #D8EEEA; color: #0B5A54; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex: none">佐</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 16px; font-weight: 500">佐藤 健</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5B6B66">SATO-PC · 192.168.1.21</span></span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #14532D; flex: none"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 4px; background: #15803D"></span>在席</span>
+</a>
+
+<a href="Chat.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 10px 20px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #16231F; background: #fff; border-bottom: 1px solid #EAEEEC">
+<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 20px; background: #D8EEEA; color: #0B5A54; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex: none">鈴</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 16px; font-weight: 500">鈴木 美咲</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5B6B66">SUZUKI-NB · 192.168.1.34</span></span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9A3412; flex: none"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 4px; box-sizing: border-box; border: 2px solid #B45309"></span>会議中</span>
+</a>
+
+<a href="Chat.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 10px 20px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #16231F; background: #fff; border-bottom: 1px solid #EAEEEC">
+<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 20px; background: #E6EAE8; color: #3E4C47; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex: none">高</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 16px; font-weight: 500">高橋 遼</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5B6B66">TAKAHASHI-PC · 192.168.1.40</span></span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4B5A55; flex: none"><span aria-hidden="true" style="width: 8px; height: 2px; background: #5B6B66"></span>不在</span>
+</a>
+
+<div style="padding: 16px 20px 6px; display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; color: #5B6B66"><span>開発部</span><span style="font-weight: 400">3</span></div>
+
+<a href="Chat.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 10px 20px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #16231F; background: #fff; border-bottom: 1px solid #EAEEEC">
+<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 20px; background: #D8EEEA; color: #0B5A54; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex: none">田</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 16px; font-weight: 500">田中 悠斗</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5B6B66">DEV-TANAKA · 192.168.1.52</span></span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #14532D; flex: none"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 4px; background: #15803D"></span>在席</span>
+</a>
+
+<a href="Chat.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 10px 20px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #16231F; background: #fff; border-bottom: 1px solid #EAEEEC">
+<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 20px; background: #D8EEEA; color: #0B5A54; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex: none">伊</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 16px; font-weight: 500">伊藤 さくら</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5B6B66">DEV-ITO · 192.168.1.57</span></span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #14532D; flex: none"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 4px; background: #15803D"></span>在席</span>
+</a>
+
+<a href="Chat.dc.html" style="display: flex; align-items: center; gap: 12px; padding: 10px 20px; min-height: 64px; box-sizing: border-box; text-decoration: none; color: #16231F; background: #fff; border-bottom: 1px solid #EAEEEC">
+<span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 20px; background: #D8EEEA; color: #0B5A54; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex: none">渡</span>
+<span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 16px; font-weight: 500">渡辺 蓮</span><span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #5B6B66">DEV-WATANABE · 192.168.1.63</span></span>
+<span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9A3412; flex: none"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 4px; box-sizing: border-box; border: 2px solid #B45309"></span>離席中</span>
+</a>
+
+</main>
+
+<a href="Compose.dc.html" style="position: absolute; right: 20px; bottom: 84px; display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 20px; box-sizing: border-box; border-radius: 26px; background: #0F766E; color: #fff; text-decoration: none; font-size: 15px; font-weight: 700; box-shadow: 0 4px 14px rgba(15, 118, 110, 0.35)">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>新規メッセージ
+</a>
+
+<nav aria-label="メインメニュー" style="flex: none; display: flex; height: 64px; background: #fff; border-top: 1px solid #DDE3E0">
+<a href="Main.dc.html" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #0F766E; font-size: 12px; font-weight: 700">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 4.65a3.5 3.5 0 0 1 0 6.7"/></svg>メンバー
+</a>
+<a href="Received.dc.html" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #5B6B66; font-size: 12px">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2.5-7h13L21 13v6H3z"/><path d="M3 13h5l1 2h6l1-2h5"/></svg>受信箱
+</a>
+<a href="Settings.dc.html" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; text-decoration: none; color: #5B6B66; font-size: 12px">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>設定
+</a>
+</nav>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

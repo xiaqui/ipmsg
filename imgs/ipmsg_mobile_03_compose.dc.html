@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>新規メッセージ</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; background: #F3F5F4; color: #16231F; font-family: 'IBM Plex Sans JP', 'Hiragino Sans', 'Noto Sans JP', sans-serif">
+
+<header style="flex: none; display: flex; align-items: center; justify-content: space-between; padding: 12px 8px 12px 4px; background: #fff; border-bottom: 1px solid #DDE3E0">
+<a href="Main.dc.html" aria-label="閉じる" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #16231F">
+<svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+</a>
+<h1 style="margin: 0; font-size: 17px; font-weight: 700">新規メッセージ</h1>
+<span style="width: 44px"></span>
+</header>
+
+<main style="flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 20px; padding: 20px">
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<h2 style="margin: 0; font-size: 13px; font-weight: 700; color: #5B6B66">宛先</h2>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<span style="display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 6px 0 14px; box-sizing: border-box; background: #D8EEEA; color: #0B5A54; border-radius: 18px; font-size: 14px; font-weight: 500">佐藤 健
+<button type="button" aria-label="佐藤 健を宛先から外す" style="width: 28px; height: 28px; border: 0; background: transparent; color: #0B5A54; padding: 0; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></span>
+<span style="display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 6px 0 14px; box-sizing: border-box; background: #D8EEEA; color: #0B5A54; border-radius: 18px; font-size: 14px; font-weight: 500">鈴木 美咲
+<button type="button" aria-label="鈴木 美咲を宛先から外す" style="width: 28px; height: 28px; border: 0; background: transparent; color: #0B5A54; padding: 0; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></span>
+<span style="display: flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 6px 0 14px; box-sizing: border-box; background: #D8EEEA; color: #0B5A54; border-radius: 18px; font-size: 14px; font-weight: 500">開発部（3人）
+<button type="button" aria-label="開発部を宛先から外す" style="width: 28px; height: 28px; border: 0; background: transparent; color: #0B5A54; padding: 0; display: flex; align-items: center; justify-content: center"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></span>
+<button type="button" style="display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 14px; box-sizing: border-box; background: #fff; color: #0F766E; border: 1px dashed #0F766E; border-radius: 22px; font: inherit; font-size: 14px; font-weight: 700"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>追加</button>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 8px">
+<label for="body" style="font-size: 13px; font-weight: 700; color: #5B6B66">本文</label>
+<textarea id="body" placeholder="メッセージを入力" style="height: 150px; box-sizing: border-box; padding: 12px 14px; border: 1px solid #DDE3E0; border-radius: 12px; background: #fff; font: inherit; font-size: 15px; line-height: 1.6; color: #16231F; resize: none; outline: 0"></textarea>
+<button type="button" style="align-self: flex-start; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: #0F766E; font: inherit; font-size: 14px; font-weight: 700">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 0 1 5 5L10 17.5a2 2 0 0 1-3-3L14.5 7"/></svg>ファイルを添付</button>
+</section>
+
+<section style="display: flex; flex-direction: column; background: #fff; border: 1px solid #DDE3E0; border-radius: 12px">
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 16px; box-sizing: border-box; border-bottom: 1px solid #EAEEEC">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 500">封書で送る</span><span style="font-size: 12px; color: #5B6B66">相手が開封するまで本文は表示されません</span></span>
+<input type="checkbox" checked style="width: 24px; height: 24px; margin: 0; accent-color: #0F766E">
+</label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 16px; box-sizing: border-box; border-bottom: 1px solid #EAEEEC">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 500">開封確認を受け取る</span><span style="font-size: 12px; color: #5B6B66">開封されたときに通知します</span></span>
+<input type="checkbox" checked style="width: 24px; height: 24px; margin: 0; accent-color: #0F766E">
+</label>
+<label style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 10px 16px; box-sizing: border-box">
+<span style="flex: 1; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 15px; font-weight: 500">一斉送信（ブロードキャスト）</span><span style="font-size: 12px; color: #5B6B66">同じネットワークの全員に送ります</span></span>
+<input type="checkbox" style="width: 24px; height: 24px; margin: 0; accent-color: #0F766E">
+</label>
+</section>
+
+</main>
+
+<div style="flex: none; padding: 12px 20px 24px; background: #fff; border-top: 1px solid #DDE3E0">
+<button type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 52px; border: 0; border-radius: 14px; background: #0F766E; color: #fff; font: inherit; font-size: 16px; font-weight: 700">
+<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12l16-8-6 16-3-7z"/></svg>送信</button>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
