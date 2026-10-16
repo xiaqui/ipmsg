@@ -241,10 +241,17 @@ class MessengerTest {
         assertEquals("署名",signatureError.stage)
     }
 
-    @Test fun m3_networkCallbacksOnlyClearPeersWhenEveryLanIsLost() {
+    @Test fun m3_networkCallbacksPreserveChurnButClearLostPrefixMembership() {
         assertFalse(LanNetworkPolicy.clearPeersAfterLost(2))
         assertFalse(LanNetworkPolicy.clearPeersAfterLost(1))
         assertTrue(LanNetworkPolicy.clearPeersAfterLost(0))
+        assertFalse(LanNetworkPolicy.prefixMembershipLost(emptySet(),setOf("192.168.1.0/24")))
+        assertFalse(LanNetworkPolicy.prefixMembershipLost(setOf("192.168.1.0/24"),setOf("192.168.1.0/24")))
+        assertFalse(LanNetworkPolicy.prefixMembershipLost(
+            setOf("192.168.1.0/24","10.0.0.0/24"),setOf("10.0.0.0/24")))
+        assertTrue(LanNetworkPolicy.prefixMembershipLost(
+            setOf("192.168.1.0/24"),setOf("192.168.2.0/24")))
+        assertTrue(LanNetworkPolicy.prefixMembershipLost(setOf("192.168.1.0/24"),emptySet()))
     }
 
     @Test fun m3_lanDiagnosticReportSeparatesDiscoveryTcpAckVpnAndOfflineQueue() {
@@ -254,7 +261,9 @@ class MessengerTest {
         diag.udpReceived("192.168.1.2")
         diag.helloAccepted(b,"192.168.1.2")
         diag.tcpAttempt(b,"192.168.1.2")
-        diag.tcpFailed(b,"ConnectException")
+        diag.tcpConnected(b)
+        diag.deliveryFailed(b,"ACK待機・検証","SocketTimeoutException")
+        diag.tcpIncoming(b)
         diag.ackSent(b)
         diag.queue(2,1)
         now+=1000
@@ -263,8 +272,10 @@ class MessengerTest {
             listOf("wifi 192.168.1.3/24"),"あり（既定経路）",true,true,true,now)
         assertTrue(report.contains("UDP: 送信 1"))
         assertTrue(report.contains("探索検証: 成功 1"))
-        assertTrue(report.contains("TCP: 試行 1"))
-        assertTrue(report.contains("ACK: 受信 0 / 送信 1"))
+        assertTrue(report.contains("TCP送信: 試行 1 / 接続 1 / 接続失敗 0"))
+        assertTrue(report.contains("TCP受信: 1"))
+        assertTrue(report.contains("ACK: 受信 0 / 送信 1 / ACK・送信段階失敗 1"))
+        assertTrue(report.contains("ACK待機・検証 SocketTimeoutException"))
         assertTrue(report.contains("VPN: あり（既定経路）"))
         assertTrue(report.contains("オンライン待ち 1件"))
         assertFalse(report.contains("端末B"))
