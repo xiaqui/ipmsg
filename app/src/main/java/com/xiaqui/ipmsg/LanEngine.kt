@@ -56,20 +56,24 @@ class LanEngine(private val context: Context, private val store: Store,
             store.retry(); scheduleTick()
         }
         override fun onLost(network: Network) {
-            val lost = lanPrefixes.remove(network).orEmpty()
+            val before = lanPrefixes.values.flatten().toSet()
+            lanPrefixes.remove(network)
             val remaining = networks().size
-            val remainingPrefixes = lanPrefixes.values.flatten().toSet()
+            val after = lanPrefixes.values.flatten().toSet()
             diagnostics.network("切断",network.toString()+" 残りLAN="+remaining)
+            // Store has one global seen timestamp per peer. Do not clear healthy peers on another
+            // active LAN; globally expire only when no prior prefix remains reachable.
             if(LanNetworkPolicy.clearPeersAfterLost(remaining) ||
-                LanNetworkPolicy.prefixMembershipLost(lost,remainingPrefixes)) store.offline()
+                LanNetworkPolicy.prefixMembershipLost(before,after)) store.offline()
             scheduleTick()
         }
         override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
             val current = ipv4Prefixes(lp)
-            val previous = lanPrefixes[network].orEmpty()
             if(current.isNotEmpty()) {
+                val before = lanPrefixes.values.flatten().toSet()
                 lanPrefixes[network] = current
-                if(LanNetworkPolicy.prefixMembershipLost(previous,current)) store.offline()
+                val after = lanPrefixes.values.flatten().toSet()
+                if(LanNetworkPolicy.prefixMembershipLost(before,after)) store.offline()
             }
             diagnostics.network("構成変更",network.toString()+" prefix="+current.joinToString(","))
             store.retry(); scheduleTick()
