@@ -60,7 +60,7 @@ internal class LanDiagnostics(private val clock: () -> Long = System::currentTim
         tcpIncoming.incrementAndGet(); lastTcp = clock(); event("TCP受信",peer.take(8))
     }
     fun deliveryFailed(peer: String, stage: String, reason: String) {
-        deliveryFailed.incrementAndGet(); lastTcpFailure=(stage+" "+reason).take(80)
+        deliveryFailed.incrementAndGet(); lastTcp = clock(); lastTcpFailure=(stage+" "+reason).take(80)
         event("配送失敗",peer.take(8)+" "+lastTcpFailure)
     }
     fun ackReceived(peer: String) {
@@ -122,4 +122,6 @@ internal class LanDiagnostics(private val clock: () -> Long = System::currentTim
 
 internal object LanNetworkPolicy {
     fun clearPeersAfterLost(remainingLanNetworks: Int): Boolean = remainingLanNetworks == 0
+    fun prefixMembershipLost(previous: Set<String>, current: Set<String>): Boolean =
+        previous.isNotEmpty() && previous.intersect(current).isEmpty()
 }
