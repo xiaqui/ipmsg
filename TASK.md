@@ -1,9 +1,18 @@
 # TASK.md — 家庭内 IP Messenger 仕様書・実装指示書
 
-更新日: 2026-10-16（JST）
-状態: **M0〜M3は実装・mainマージ・CI・署名APK生成・Google Drive配送まで完了**。次はWindows版の設計とAndroid実機検証。実機検証は未完了。最新のSHA／PR／run／artifact／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
+更新日: 2026-10-17（JST）
+状態: **M0〜M3の既存配送後、Android実機LAN探索・オンライン判定を優先修正中**。PR #4でLAN診断と局所修正を進め、Windows版は開始しない。修正後APKの実機検証は未完了。最新のSHA／PR／run／artifact／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
 
-## 0. 次期開発指示（2026-10-16改訂・現行の最優先指示）
+## 0. 現行最優先指示（2026-10-17）
+
+- Xperia XZ1 CompactのLAN探索・ONLINE判定不安定を最優先とし、Rakuten Handの成功例とAce III宛て保留0回を診断する。
+- Nearby Gamesの `docs/LAN_NSD_MULTICAST_DISCOVERY_FIX_2026-10-16_JA.md` と比較し、UDP送受信、署名検証、最終発見時刻、TCP接続、ACK、VPN、LAN prefixを可視化する。
+- 通常のConnectivity callback churnでは最終発見を消さず、全LAN消失または有効IPv4 prefix membership喪失時だけ無効化する。原因に応じた局所修正に限定する。
+- 自動テスト、独立レビュー、P1/P2修正、PRマージまで自走する。実機未検証は実機合格と書かない。
+- GitHub ActionsのArtifact容量制限によるupload失敗は開発停止条件にしない。完成SHAと容量回復後のAPK生成・Drive固定ID配送手順を `docs/WORK_PROGRESS.md` に残す。
+- **Windows版開発は開始しない。**
+
+## 0-B. 以前の次期開発指示（2026-10-16・履歴）
 
 **旧「今回のWork実行指示：M0〜M3実装」は完了済みの履歴であり、再実行しない。**
 - 優先: Android → Windows → iOS。Android 6.0対応とM0〜M3機能を維持。

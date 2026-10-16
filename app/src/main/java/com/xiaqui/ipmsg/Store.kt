@@ -31,15 +31,15 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
         buildList { while(c.moveToNext()) add(Peer(c.getString(0),c.getString(1),c.getString(2),
             c.getInt(3) == 1,c.getString(4),c.getLong(5))) }
     }
-    @Synchronized fun discover(hello: Protocol.Hello, host: String, now: Long) {
+    @Synchronized fun discover(hello: Protocol.Hello, host: String, now: Long): Boolean {
         // Candidate admission is separate from approved peers. One source cannot reserve every slot.
         writableDatabase.delete("peers", "trusted=0 AND seen<?", arrayOf((now - 120000).toString()))
         val current = peers()
         val old = current.find { it.id == hello.id }
-        if (old != null && old.key != hello.key) return
+        if (old != null && old.key != hello.key) return false
         if (old?.trusted != true) {
             val candidates = current.filter { !it.trusted }
-            if (candidates.any { it.host == host && it.id != hello.id }) return
+            if (candidates.any { it.host == host && it.id != hello.id }) return false
             if (old == null && candidates.size >= 16) {
                 candidates.sortedBy { it.seen }.take(candidates.size - 15).forEach {
                     // The UI can approve concurrently; never evict a peer that became approved.
@@ -54,9 +54,10 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
             put("trusted",0);put("host",host);put("seen",now)
         }
         db.insertWithOnConflict("peers",null,initial,SQLiteDatabase.CONFLICT_IGNORE)
-        db.update("peers",ContentValues().apply {
+        val updated = db.update("peers",ContentValues().apply {
             put("name",hello.name);put("host",host);put("seen",now)
         },"id=? AND pub=?",arrayOf(hello.id,hello.key))
+        return updated == 1
     }
 
     @Synchronized fun trust(id: String, value: Boolean) {

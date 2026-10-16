@@ -1,7 +1,36 @@
 # Work進捗・再開手順
 
 更新: 2026-10-16 JST（CI記録は2026-10-15 UTC）
-状態: **M0〜M3の実装・mainマージ・自動検査・署名APK生成・Google Drive配送まで完了。実機検証は未完了。M4以降には進んでいない。**
+状態: **M0〜M3の既存配送後、Android実機LAN探索・オンライン判定を優先修正中。Windows版は開始していない。修正後APKの実機検証は未完了。**
+
+## Android LAN探索・オンライン判定修正（2026-10-17 JST）
+
+- PR: https://github.com/xiaqui/ipmsg/pull/4
+- 作業ブランチ: `fix/android-lan-diagnostics`
+- この文書更新時の実装HEAD: `39c2edf1ad2486cfe4a9ea6a2ed14aa66d61be3b`（後続の文書コミットを除く）
+- 完成main SHA: **PR #4マージ後にこの欄へ確定記入する。**
+- 実機観測: Xperia XZ1 CompactはONLINE判定が不安定。Rakuten Handとの通信成功例あり。Ace III宛ては保留0回のままで、TCP失敗ではなくONLINE判定前で止まっている可能性が高い。
+- Nearby GamesのNSD修正と比較。両者ともMulticastLockを必要とするが、ipmsgはNSDではなく署名付きUDPブロードキャストを使用する。
+- 原因: `ConnectivityManager.NetworkCallback` の利用可能／LinkProperties変更のたびに全peerの `seen` を0にしており、実機のcallback churnでONLINEがちらついた。
+- 局所修正: 通常callbackでは最終発見を保持し、全LAN消失または有効IPv4 prefix membership喪失時だけoffline化。callback時は即時hello／保留再評価。MulticastLock取得失敗は可視化して探索サービスを継続。
+- LAN診断: UDP送受信、helloの検証成功／拒否段階、端末別最終発見時刻、TCP送信試行／接続／接続失敗、TCP受信、ACK送受信／送信・ACK段階失敗、VPN、LAN prefix、受信ポート、保留／オンライン待ちを表示。本文・公開鍵・秘密鍵は含めない。
+- 独立レビュー: 初回P1 1件（テスト期待文字列）とP2 2件（TCP/ACK段階の未配線、prefix変更時の旧ONLINE保持）を検出し、実装／回帰テストへ反映。最終HEAD再レビュー結果はマージ前に確定する。
+- Windows版開発は未着手。この修正ではAndroidコードと関連文書以外を変更しない。
+- 詳細な実機採取項目: [ANDROID_DEVICE_ACCEPTANCE_JA.md](ANDROID_DEVICE_ACCEPTANCE_JA.md)
+
+### Artifact容量制限中の扱い
+
+GitHub ActionsのArtifactストレージ容量制限によるupload失敗は既知の環境要因であり、開発停止条件にしない。unit test、Lint、assembleDebug、署名／badging／SHA検査までの結果を合否判断し、artifact uploadだけの失敗は分離して記録する。容量回復前に古いAPKを修正版として再配送しない。
+
+### 容量回復後のAPK生成・固定URL配送再開
+
+1. 本節の完成main SHAを確認し、必ずそのSHAの `build-android-apk.yml` をmainでworkflow_dispatchする。古い成功runを流用しない。
+2. unit test（SDK 23/28/34）、Lint、assembleDebug、署名alias／証明書SHA-256、package=`com.xiaqui.ipmsg`、minSdk=23が成功したrun IDとartifact IDを確定する。
+3. `ipmsg-debug` ZIPを取得し、`ipmsg-debug.apk`、`SHA256SUMS`、`provenance.txt`、`signing.txt`、`badging.txt`を照合する。ZIP自体をAPKとして扱わない。
+4. APKのサイズ／SHA-256を記録し、Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` の内容を実APKで更新する。Drive上のrenameやフォルダ移動は固定IDが変わらない限り可。共有権限とURLを再確認する。
+5. Driveから再取得し、元APKとのサイズ、SHA-256、byte-for-byte一致を検証する。run／artifact／APK／Driveの値を本書へ追記する。
+6. XZ1 Compact、Rakuten Hand、Ace IIIへ導入し、双方向UDP探索、署名、最終発見、TCP、ACK、VPNを診断画面で採取する。実機成功前に「実機修正済み」と断定しない。
+
 
 ## 実装／コミット／PR
 
