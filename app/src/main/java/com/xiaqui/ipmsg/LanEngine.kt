@@ -45,21 +45,33 @@ class LanEngine(private val context: Context, private val store: Store,
     private var multicast: WifiManager.MulticastLock? = null
     private var callbackRegistered = false
     private val diagnostics = LanDiagnostics()
+    private val lanPrefixes = java.util.concurrent.ConcurrentHashMap<Network,Set<String>>()
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            diagnostics.network("利用可能",network.toString())
+            val current = cm.getLinkProperties(network)?.let(::ipv4Prefixes).orEmpty()
+            if(current.isNotEmpty()) lanPrefixes[network] = current
+            diagnostics.network("利用可能",network.toString()+" prefix="+current.joinToString(","))
             // A callback is not proof that all peers vanished. Keep their last-seen timestamps
             // and send an immediate hello; indiscriminate clearing caused online-state flicker.
             store.retry(); scheduleTick()
         }
         override fun onLost(network: Network) {
+            val lost = lanPrefixes.remove(network).orEmpty()
             val remaining = networks().size
+            val remainingPrefixes = lanPrefixes.values.flatten().toSet()
             diagnostics.network("切断",network.toString()+" 残りLAN="+remaining)
-            if(LanNetworkPolicy.clearPeersAfterLost(remaining)) store.offline()
+            if(LanNetworkPolicy.clearPeersAfterLost(remaining) ||
+                LanNetworkPolicy.prefixMembershipLost(lost,remainingPrefixes)) store.offline()
             scheduleTick()
         }
         override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
-            diagnostics.network("構成変更",network.toString())
+            val current = ipv4Prefixes(lp)
+            val previous = lanPrefixes[network].orEmpty()
+            if(current.isNotEmpty()) {
+                lanPrefixes[network] = current
+                if(LanNetworkPolicy.prefixMembershipLost(previous,current)) store.offline()
+            }
+            diagnostics.network("構成変更",network.toString()+" prefix="+current.joinToString(","))
             store.retry(); scheduleTick()
         }
     }
@@ -79,6 +91,14 @@ class LanEngine(private val context: Context, private val store: Store,
             Protocol.onPrefix(address,link.address,link.prefixLength)
         } == true
     }
+    private fun ipv4Prefixes(lp: android.net.LinkProperties): Set<String> =
+        lp.linkAddresses.filter { it.address is Inet4Address && it.prefixLength in 1..32 }.map { link ->
+            val ip = link.address.address.fold(0L) { n,b -> (n shl 8) or (b.toLong() and 255) }
+            val mask = if(link.prefixLength == 32) 0xffffffffL
+                else (0xffffffffL shl (32-link.prefixLength)) and 0xffffffffL
+            val prefix = ip and mask
+            (3 downTo 0).joinToString(".") { ((prefix shr (it*8)) and 255).toString() }+"/"+link.prefixLength
+        }.toSet()
     fun start() {
         check(running.compareAndSet(false,true))
         store.offline()
@@ -230,6 +250,8 @@ class LanEngine(private val context: Context, private val store: Store,
         nets.forEach { network ->
             if(!running.get()) return
             diagnostics.tcpAttempt(peer.id,peer.host)
+            var connected = false
+            var stage = "TCP接続"
             val success = runCatching {
                 val connection = network.socketFactory.createSocket()
                 sockets.add(connection)
@@ -237,17 +259,24 @@ class LanEngine(private val context: Context, private val store: Store,
                 try { connection.use { socket ->
                     socket.soTimeout = 5000
                     socket.connect(InetSocketAddress(peer.host,Protocol.PORT),3000)
+                    connected = true
+                    diagnostics.tcpConnected(peer.id)
                     require(running.get() && store.peers().any { it.id == peer.id && it.trusted })
+                    stage = "本文送信"
                     Protocol.write(DataOutputStream(socket.getOutputStream()),request)
+                    stage = "ACK待機・検証"
                     val ack = Protocol.open(Protocol.read(DataInputStream(socket.getInputStream())),pair,recipient)
                     require(ack.getString("type") == "ACK" && ack.getString("id") == letter.id)
                     require(store.peers().any { it.id == peer.id && it.trusted })
                     diagnostics.ackReceived(peer.id)
+                    stage = "配送記録"
                     store.delivered(letter.id,peer.id)
                 } } finally { timeout.cancel(false);sockets.remove(connection) }
-            }.onSuccess { diagnostics.tcpConnected(peer.id) }
-                .onFailure { diagnostics.tcpFailed(peer.id,it.javaClass.simpleName+":"+it.message.orEmpty()) }
-                .isSuccess
+            }.onFailure {
+                val reason = it.javaClass.simpleName+":"+it.message.orEmpty()
+                if(connected) diagnostics.deliveryFailed(peer.id,stage,reason)
+                else diagnostics.tcpFailed(peer.id,reason)
+            }.isSuccess
             if(success) return
         }
     }
@@ -255,7 +284,7 @@ class LanEngine(private val context: Context, private val store: Store,
         val bytes = Protocol.read(DataInputStream(socket.getInputStream()))
         val id = Protocol.sender(bytes)
         val peer = store.peers().find { it.id == id && it.trusted } ?: return
-        diagnostics.tcpConnected(peer.id)
+        diagnostics.tcpIncoming(peer.id)
         val body = Protocol.open(bytes,pair,Protocol.key(peer.key))
         require(body.getString("type") == "TEXT")
         val messageId = body.getString("id")
