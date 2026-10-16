@@ -1,7 +1,7 @@
 # TASK.md — 家庭内 IP Messenger 仕様書・実装指示書
 
 更新日: 2026-10-17（JST）
-状態: **M0〜M3の既存配送後、Android実機LAN探索・オンライン判定を優先修正中**。PR #4でLAN診断と局所修正を進め、Windows版は開始しない。修正後APKの実機検証は未完了。最新のSHA／PR／run／artifact／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
+状態: **Android実機LAN探索・オンライン判定の診断／局所修正はPR #4でmainへマージ済み**（実装SHA `38e5c831c2ab03ab44fb1ab412f69b673a528c57`）。Windows版は開始していない。修正後APKの生成・配送と実機検証はArtifact容量回復待ち。最新のSHA／PR／run／artifact／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
 
 ## 0. 現行最優先指示（2026-10-17）
 
