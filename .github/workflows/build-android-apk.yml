@@ -75,6 +75,7 @@ jobs:
           cat signing.txt SHA256SUMS provenance.txt
       - uses: actions/upload-artifact@v4
         with:
+          retention-days: 3
           name: ipmsg-debug
           path: |
             ipmsg-debug.apk
