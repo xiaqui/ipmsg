@@ -1,0 +1,66 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-17T04:20:00Z"
+  },
+  "title": "ipmsg Mobile UI",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "ipmsg_mobile_01_members.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "メンバー一覧"
+    },
+    "ipmsg_mobile_02_chat.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "トーク"
+    },
+    "ipmsg_mobile_03_compose.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "新規メッセージ"
+    },
+    "ipmsg_mobile_04_sealed_received.dc.html": {
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "封書の受信"
+    },
+    "ipmsg_mobile_05_settings.dc.html": {
+      "x": 1880,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "設定"
+    }
+  },
+  "order": [
+    "ipmsg_mobile_01_members.dc.html",
+    "ipmsg_mobile_02_chat.dc.html",
+    "ipmsg_mobile_03_compose.dc.html",
+    "ipmsg_mobile_04_sealed_received.dc.html",
+    "ipmsg_mobile_05_settings.dc.html"
+  ],
+  "notes": {
+    "t1": {
+      "x": 0,
+      "y": -260,
+      "text": "ipmsg モバイル：LAN内メッセージング",
+      "kind": "title1",
+      "maxW": 2270
+    }
+  },
+  "designSystems": []
+}
