@@ -2,6 +2,8 @@ package com.xiaqui.ipmsg
 
 import java.util.ArrayDeque
 import java.util.Locale
+import java.util.Date
+import java.text.SimpleDateFormat
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -103,10 +105,8 @@ internal class LanDiagnostics(private val clock: () -> Long = System::currentTim
     private fun ready(value: Boolean) = if(value) "待受中" else "停止/再試行"
     private fun age(now: Long, then: Long): String =
         if(then <= 0) "なし" else String.format(Locale.US,"%.1f秒前",((now-then).coerceAtLeast(0))/1000.0)
-    private fun formatTime(value: Long): String {
-        val total=(value/1000)%86400
-        return String.format(Locale.US,"%02d:%02d:%02d",total/3600,(total/60)%60,total%60)
-    }
+    private fun formatTime(value: Long): String =
+        SimpleDateFormat("HH:mm:ss",Locale.JAPAN).format(Date(value))
 }
 
 internal object LanNetworkPolicy {
