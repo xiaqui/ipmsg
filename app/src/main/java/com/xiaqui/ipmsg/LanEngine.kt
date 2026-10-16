@@ -69,13 +69,12 @@ class LanEngine(private val context: Context, private val store: Store,
         }
         override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
             val current = ipv4Prefixes(lp)
-            if(current.isNotEmpty()) {
-                val before = lanPrefixes.values.flatten().toSet()
-                lanPrefixes[network] = current
-                val after = lanPrefixes.values.flatten().toSet()
-                if(LanNetworkPolicy.prefixMembershipLost(before,after)) store.offline()
-            }
-            diagnostics.network("構成変更",network.toString()+" prefix="+current.joinToString(","))
+            val before = lanPrefixes.values.flatten().toSet()
+            if(current.isEmpty()) lanPrefixes.remove(network) else lanPrefixes[network] = current
+            val after = lanPrefixes.values.flatten().toSet()
+            if(LanNetworkPolicy.prefixMembershipLost(before,after)) store.offline()
+            diagnostics.network("構成変更",network.toString()+" prefix="+
+                if(current.isEmpty()) "IPv4なし" else current.joinToString(","))
             store.retry(); scheduleTick()
         }
     }
