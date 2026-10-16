@@ -74,6 +74,7 @@ class MainActivity : Activity() {
         root.addView(button("受信箱") { history(true) })
         root.addView(button("送信履歴・保留") { history(false) })
         root.addView(button("設定・端末承認") { settings() })
+        root.addView(button("LAN診断") { showLanDiagnostics() })
         if(intent.getBooleanExtra("inbox",false)) history(true)
     }
     override fun onSaveInstanceState(outState: Bundle) {
@@ -164,6 +165,31 @@ class MainActivity : Activity() {
                     }.setNegativeButton("閉じる",null).show()
             }.setNegativeButton("閉じる",null)
             .setNeutralButton("保留を再送") { _,_ -> store.retry();toast("承認済みの相手がオンラインなら順次再送します") }.show()
+    }
+    private fun showLanDiagnostics() {
+        val report = MessengerService.engine?.diagnosticReport() ?: buildString {
+            appendLine("受信サービス停止中")
+            appendLine("VPN・UDP・TCP・ACKの実測値は、常駐受信を有効にしてから確認してください。")
+            val now=System.currentTimeMillis()
+            appendLine("保存済み端末:")
+            store.peers().forEach {
+                val age=if(it.seen<=0) "未受信" else ((now-it.seen).coerceAtLeast(0)/1000).toString()+"秒前"
+                appendLine("  "+it.name+" "+it.id.take(8)+" "+it.host+" 最終発見:"+age+
+                    " "+if(it.online(now)) "ONLINE" else "OFFLINE")
+            }
+        }
+        AlertDialog.Builder(this).setTitle("LAN診断")
+            .setMessage(report)
+            .setPositiveButton("コピー") { _,_ ->
+                val clipboard=getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("IP Messenger LAN診断",report))
+                toast("LAN診断をコピーしました")
+            }
+            .setNeutralButton("再探索・再送") { _,_ ->
+                store.retry();MessengerService.engine?.wake()
+                toast("探索と保留送信を再試行します")
+            }
+            .setNegativeButton("閉じる",null).show()
     }
     private fun settings() {
         val box=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(24,8,24,8) }
