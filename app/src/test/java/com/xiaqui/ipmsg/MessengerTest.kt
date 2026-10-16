@@ -247,8 +247,11 @@ class MessengerTest {
         assertTrue(LanNetworkPolicy.clearPeersAfterLost(0))
         assertFalse(LanNetworkPolicy.prefixMembershipLost(emptySet(),setOf("192.168.1.0/24")))
         assertFalse(LanNetworkPolicy.prefixMembershipLost(setOf("192.168.1.0/24"),setOf("192.168.1.0/24")))
+        val wifiAndEthernet = setOf("192.168.1.0/24","10.0.0.0/24")
         assertFalse(LanNetworkPolicy.prefixMembershipLost(
-            setOf("192.168.1.0/24","10.0.0.0/24"),setOf("10.0.0.0/24")))
+            wifiAndEthernet,setOf("10.0.0.0/24"))) // Losing Wi-Fi must not clear healthy Ethernet peers.
+        assertFalse(LanNetworkPolicy.prefixMembershipLost(
+            wifiAndEthernet,setOf("192.168.1.0/24"))) // Losing Ethernet must not clear healthy Wi-Fi peers.
         assertTrue(LanNetworkPolicy.prefixMembershipLost(
             setOf("192.168.1.0/24"),setOf("192.168.2.0/24")))
         assertTrue(LanNetworkPolicy.prefixMembershipLost(setOf("192.168.1.0/24"),emptySet()))
