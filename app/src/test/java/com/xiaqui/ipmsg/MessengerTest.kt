@@ -226,4 +226,48 @@ class MessengerTest {
         assertTrue(store.peers().any { it.id==c })
     }
 
+
+    @Test fun m3_discoveryDiagnosticsExposeValidationStageWithoutPayloads() {
+        val hello=Protocol.hello("端末B",bob,100000)
+        val clockError=assertThrows(Protocol.HelloValidationException::class.java) {
+            Protocol.readHello(hello,300001)
+        }
+        assertEquals("時刻",clockError.stage)
+        val forged=JSONObject(String(hello,Charsets.UTF_8))
+        forged.put("body",JSONObject(forged.getString("body")).put("name","偽端末").toString())
+        val signatureError=assertThrows(Protocol.HelloValidationException::class.java) {
+            Protocol.readHello(forged.toString().toByteArray(Charsets.UTF_8),100000)
+        }
+        assertEquals("署名",signatureError.stage)
+    }
+
+    @Test fun m3_networkCallbacksOnlyClearPeersWhenEveryLanIsLost() {
+        assertFalse(LanNetworkPolicy.clearPeersAfterLost(2))
+        assertFalse(LanNetworkPolicy.clearPeersAfterLost(1))
+        assertTrue(LanNetworkPolicy.clearPeersAfterLost(0))
+    }
+
+    @Test fun m3_lanDiagnosticReportSeparatesDiscoveryTcpAckVpnAndOfflineQueue() {
+        var now=100000L
+        val diag=LanDiagnostics { now }
+        diag.udpSent("192.168.1.255")
+        diag.udpReceived("192.168.1.2")
+        diag.helloAccepted(b,"192.168.1.2")
+        diag.tcpAttempt(b,"192.168.1.2")
+        diag.tcpFailed(b,"ConnectException")
+        diag.ackSent(b)
+        diag.queue(2,1)
+        now+=1000
+        val report=diag.report("受信待機中",
+            listOf(Peer(b,"B",Protocol.encode(bob.public.encoded),true,"192.168.1.2",100000)),
+            listOf("wifi 192.168.1.3/24"),"あり（既定経路）",true,true,true,now)
+        assertTrue(report.contains("UDP: 送信 1"))
+        assertTrue(report.contains("探索検証: 成功 1"))
+        assertTrue(report.contains("TCP: 試行 1"))
+        assertTrue(report.contains("ACK: 受信 0 / 送信 1"))
+        assertTrue(report.contains("VPN: あり（既定経路）"))
+        assertTrue(report.contains("オンライン待ち 1件"))
+        assertFalse(report.contains("端末B"))
+    }
+
 }
