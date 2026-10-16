@@ -104,10 +104,12 @@ class LanEngine(private val context: Context, private val store: Store,
                     socket.reuseAddress = true; socket.bind(InetSocketAddress(Protocol.PORT))
                     socket.soTimeout = 1000; udp = socket; discoveryReady = true
                     while(running.get()) {
+                        var packetHost = "?"
                         try {
                             val packet = DatagramPacket(ByteArray(4097),4097)
                             socket.receive(packet)
                             val host = packet.address.hostAddress ?: "?"
+                            packetHost = host
                             diagnostics.udpReceived(host)
                             if(!local(packet.address) || networks().isEmpty()) {
                                 diagnostics.helloRejected(host,"有効LAN外")
@@ -122,7 +124,7 @@ class LanEngine(private val context: Context, private val store: Store,
                             }
                         } catch(_: java.net.SocketTimeoutException) {
                         } catch(e: Protocol.HelloValidationException) {
-                            diagnostics.helloRejected("受信元",e.stage)
+                            diagnostics.helloRejected(packetHost,e.stage)
                         }
                     }
                 }
