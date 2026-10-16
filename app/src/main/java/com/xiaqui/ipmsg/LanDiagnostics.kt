@@ -114,15 +114,24 @@ internal class LanDiagnostics(private val clock: () -> Long = System::currentTim
     }
 
     private fun safe(value: String): String = buildString {
-        value.take(64).forEach { ch ->
-            when(ch) {
-                '\n' -> append("\\n")
-                '\r' -> append("\\r")
-                '\t' -> append("\\t")
-                else -> if(ch.code < 0x20 || ch.code == 0x7f)
-                    append("\\u"+ch.code.toString(16).padStart(4,'0'))
-                else append(ch)
+        var offset = 0
+        var count = 0
+        while(offset < value.length && count < 64) {
+            val codePoint = Character.codePointAt(value,offset)
+            val type = Character.getType(codePoint)
+            when(codePoint) {
+                0x0a -> append("\\n")
+                0x0d -> append("\\r")
+                0x09 -> append("\\t")
+                else -> if(Character.isISOControl(codePoint) ||
+                    type == Character.FORMAT.toInt() ||
+                    type == Character.LINE_SEPARATOR.toInt() ||
+                    type == Character.PARAGRAPH_SEPARATOR.toInt())
+                    append("\\u{"+codePoint.toString(16).padStart(4,'0')+"}")
+                else append(String(Character.toChars(codePoint)))
             }
+            offset += Character.charCount(codePoint)
+            count++
         }
     }
     private fun ready(value: Boolean) = if(value) "待受中" else "停止/再試行"
