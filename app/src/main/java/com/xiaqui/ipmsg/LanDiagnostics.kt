@@ -89,7 +89,7 @@ internal class LanDiagnostics(private val clock: () -> Long = System::currentTim
     ): String {
         val peerLines = if(peers.isEmpty()) "  なし" else peers.joinToString("\n") {
             val age = if(it.seen <= 0) "未受信" else age(now,it.seen)
-            "  "+(if(it.trusted) "承認" else "未承認")+" "+it.name+" "+it.id.take(8)+
+            "  "+(if(it.trusted) "承認" else "未承認")+" "+safe(it.name)+" "+it.id.take(8)+
                 " "+it.host+" 最終発見:"+age+" "+(if(it.online(now)) "ONLINE" else "OFFLINE")
         }
         val eventLines = if(events.isEmpty()) "  なし" else events.joinToString("\n") { "  "+it }
@@ -113,6 +113,18 @@ internal class LanDiagnostics(private val clock: () -> Long = System::currentTim
         }
     }
 
+    private fun safe(value: String): String = buildString {
+        value.take(64).forEach { ch ->
+            when(ch) {
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> if(ch.code < 0x20 || ch.code == 0x7f)
+                    append("\\u"+ch.code.toString(16).padStart(4,'0'))
+                else append(ch)
+            }
+        }
+    }
     private fun ready(value: Boolean) = if(value) "待受中" else "停止/再試行"
     private fun age(now: Long, then: Long): String =
         if(then <= 0) "なし" else String.format(Locale.US,"%.1f秒前",((now-then).coerceAtLeast(0))/1000.0)
