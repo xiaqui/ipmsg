@@ -258,6 +258,11 @@ class MessengerTest {
         assertTrue(LanNetworkPolicy.prefixMembershipLost(
             setOf("192.168.1.0/24"),setOf("192.168.2.0/24")))
         assertTrue(LanNetworkPolicy.prefixMembershipLost(setOf("192.168.1.0/24"),emptySet()))
+        // API 23 may deliver onAvailable before LinkProperties. One empty snapshot is not proof
+        // that every LAN disappeared; only a delayed second empty snapshot may expire peers.
+        assertFalse(LanNetworkPolicy.shouldConfirmOffline(emptySet(),false))
+        assertTrue(LanNetworkPolicy.shouldConfirmOffline(emptySet(),true))
+        assertFalse(LanNetworkPolicy.shouldConfirmOffline(setOf("192.168.1.0/24"),true))
         assertTrue(LanNetworkPolicy.hostOnPrefixes("192.168.1.25",setOf("192.168.1.0/24")))
         assertFalse(LanNetworkPolicy.hostOnPrefixes("192.168.2.25",setOf("192.168.1.0/24")))
         assertFalse(LanNetworkPolicy.hostOnPrefixes("not-an-ip",setOf("192.168.1.0/24")))

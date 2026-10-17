@@ -175,6 +175,8 @@ internal object LanNetworkPolicy {
     fun clearPeersAfterLost(remainingLanNetworks: Int): Boolean = remainingLanNetworks == 0
     fun prefixMembershipLost(previous: Set<String>, current: Set<String>): Boolean =
         previous.isNotEmpty() && previous.intersect(current).isEmpty()
+    fun shouldConfirmOffline(prefixes: Set<String>, emptyConfirmed: Boolean): Boolean =
+        prefixes.isEmpty() && emptyConfirmed
     fun hostOnPrefixes(host: String,prefixes: Set<String>): Boolean {
         val address=parseIpv4(host) ?: return false
         return prefixes.any { value ->
