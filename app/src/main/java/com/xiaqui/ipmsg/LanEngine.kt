@@ -69,7 +69,12 @@ class LanEngine(private val context: Context, private val store: Store,
             if(current.isEmpty()) lanPrefixes.remove(network) else lanPrefixes[network] = current
             diagnostics.network("構成変更",network.toString()+" prefix="+
                 if(current.isEmpty()) "IPv4なし" else current.joinToString(","))
-            if(previous != current) scheduleNetworkReconcile("構成変更")
+            if(previous != current) {
+                // Preserve attempt history, but let a recovered/new IP retry within ten seconds
+                // instead of waiting out a backoff accumulated on the old configuration.
+                store.retry()
+                scheduleNetworkReconcile("構成変更")
+            }
             scheduleTick()
         }
     }
