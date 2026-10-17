@@ -18,9 +18,10 @@ GitHub Actions Artifactの容量制限に依存せず、同一ジョブでAndroi
 2. `apksigner verify --verbose --print-certs` を実行し、Keystoreから算出した証明書SHA-256と一致させる。
 3. `aapt dump badging` でapplicationIdとminSdkを照合する。
 4. 配布名へコピーし、`SHA256SUMS` とsource SHA/run IDを含む `provenance.txt` を作る。
-5. `gh release create --prerelease` にAPKと検査記録を直接渡す。`actions/upload-artifact` は経由しない。
-6. 同じジョブで `gh release download` し、再取得APKのサイズとSHA-256をローカル生成物に一致させ、`apksigner` で再取得APKの署名証明書もKeystoreと再照合する。
-7. Release ID、tag、asset ID、source SHA、run ID、APKサイズ、SHA-256を進捗書へ記録する。
+5. `gh release create --draft --prerelease` にAPKと検査記録を直接渡す。`actions/upload-artifact` は経由せず、この時点では公開しない。
+6. 同じジョブでdraft assetを認証付きで再取得し、サイズとSHA-256をローカル生成物に一致させ、`apksigner` で署名証明書もKeystoreと再照合する。
+7. 全検査成功後だけdraftを解除してprereleaseとして公開する。失敗時は未検証APKをdraftのまま非公開に保つ。
+8. Release ID、tag、asset ID、source SHA、run ID、APKサイズ、SHA-256を進捗書へ記録する。
 
 追跡鎖は `source SHA → Actions run ID → Release ID/tag → APK asset ID → 再取得APK → SHA-256/署名` とする。ReleaseのZIP/Source code archiveをAPKと誤認しない。
 
