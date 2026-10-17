@@ -99,10 +99,13 @@ class MessengerTest {
         store.enqueue(listOf(b),a,"A","queued",100000)
         store.attempted(store.pending(100000).single(),100000)
         assertTrue(store.pending(100001).isEmpty())
+        assertEquals(1,store.letters(false).single().attempts)
         store.offline()
         assertFalse(store.peers().single().online(100000))
-        store.retry()
-        assertEquals(1,store.pending(100001).size)
+        store.retry(100001)
+        assertTrue(store.pending(109999).isEmpty())
+        assertEquals(1,store.pending(110000).size)
+        assertEquals(1,store.letters(false).single().attempts)
         assertEquals("PENDING",store.letters(false).single().state)
     }
     @Test fun m3_loopbackTextAndAuthenticatedAckUseRealTcpFrames() {
@@ -255,15 +258,46 @@ class MessengerTest {
         assertTrue(LanNetworkPolicy.prefixMembershipLost(
             setOf("192.168.1.0/24"),setOf("192.168.2.0/24")))
         assertTrue(LanNetworkPolicy.prefixMembershipLost(setOf("192.168.1.0/24"),emptySet()))
+        assertTrue(LanNetworkPolicy.hostOnPrefixes("192.168.1.25",setOf("192.168.1.0/24")))
+        assertFalse(LanNetworkPolicy.hostOnPrefixes("192.168.2.25",setOf("192.168.1.0/24")))
+        assertFalse(LanNetworkPolicy.hostOnPrefixes("not-an-ip",setOf("192.168.1.0/24")))
+    }
+
+    @Test fun m3_selectiveOfflineKeepsPeersOnRemainingPrefix() {
+        trust(bob,"B")
+        val bobHello=Protocol.readHello(Protocol.hello("B",bob,100001),100001)
+        store.discover(bobHello,"192.168.1.12",100001)
+        val carolHello=Protocol.readHello(Protocol.hello("C",carol,100002),100002)
+        store.discover(carolHello,"10.0.0.24",100002);store.trust(c,true)
+        store.offline(listOf(c))
+        assertTrue(store.peers().single { it.id==b }.online(100010))
+        assertFalse(store.peers().single { it.id==c }.online(100010))
+    }
+
+    @Test fun m3_offlineKnownIpRetryIsBoundedAndRequiresCurrentPrefix() {
+        trust(bob,"B")
+        store.enqueue(listOf(b),a,"A","one",100000)
+        store.enqueue(listOf(b),a,"A","two",100001)
+        store.offline()
+        val pending=store.pending(100001)
+        val reachable=LanRetryPolicy.select(pending,store.peers(),100001,16) { it=="192.168.1.2" }
+        assertEquals(1,reachable.size)
+        assertTrue(reachable.single().offlineFallback)
+        assertTrue(LanRetryPolicy.select(pending,store.peers(),100001,16) { false }.isEmpty())
+        store.attempted(reachable.single().letter,100001)
+        assertEquals(1,store.letters(false).count { it.attempts==1 })
+        assertTrue(store.pending(100002).none { it.id==reachable.single().letter.id })
     }
 
     @Test fun m3_lanDiagnosticReportSeparatesDiscoveryTcpAckVpnAndOfflineQueue() {
         var now=100000L
         val diag=LanDiagnostics { now }
         diag.udpSent("192.168.1.255")
-        diag.udpReceived("192.168.1.2")
+        diag.udpReceived("192.168.1.3",UdpReceiveResult.SELF,"署名OK")
+        diag.udpReceived("192.168.1.2",UdpReceiveResult.PEER,"署名OK "+b.take(8))
+        diag.udpReceived("192.168.1.9",UdpReceiveResult.DROPPED,"署名")
         diag.helloAccepted(b,"192.168.1.2")
-        diag.tcpAttempt(b,"192.168.1.2")
+        diag.tcpAttempt(b,"192.168.1.2",true)
         diag.tcpConnected(b)
         diag.deliveryFailed(b,"ACK待機・検証","SocketTimeoutException")
         diag.tcpIncoming(b)
@@ -274,8 +308,9 @@ class MessengerTest {
             listOf(Peer(b,"B\nVPN: 偽装\u0000\u2028改行\u202eabc",Protocol.encode(bob.public.encoded),true,"192.168.1.2",100000)),
             listOf("wifi 192.168.1.3/24"),"あり（既定経路）",true,true,true,now)
         assertTrue(report.contains("UDP: 送信 1"))
+        assertTrue(report.contains("自己受信 1 / 他端末受信 1 / 破棄 1"))
         assertTrue(report.contains("探索検証: 成功 1"))
-        assertTrue(report.contains("TCP送信: 試行 1 / 接続 1 / 接続失敗 0"))
+        assertTrue(report.contains("TCP送信: 試行 1（うちOFFLINE既知IP 1） / 接続 1 / 接続失敗 0"))
         assertTrue(report.contains("TCP受信: 1"))
         assertTrue(report.contains("ACK: 受信 0 / 送信 1 / ACK・送信段階失敗 1"))
         assertTrue(report.contains("ACK待機・検証 SocketTimeoutException"))
@@ -289,3 +324,4 @@ class MessengerTest {
     }
 
 }
+

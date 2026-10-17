@@ -164,7 +164,10 @@ class MainActivity : Activity() {
                         if(incoming) { selected.clear();selected.add(letter.peer);rendered="";renderPeers();composer.requestFocus() }
                     }.setNegativeButton("閉じる",null).show()
             }.setNegativeButton("閉じる",null)
-            .setNeutralButton("保留を再送") { _,_ -> store.retry();toast("承認済みの相手がオンラインなら順次再送します") }.show()
+            .setNeutralButton("保留を再送") { _,_ ->
+                MessengerService.engine?.wake() ?: store.retry()
+                toast("承認済みの相手へ、探索と安全な再送を試します")
+            }.show()
     }
     private fun showLanDiagnostics() {
         val report = MessengerService.engine?.diagnosticReport() ?: buildString {
@@ -174,19 +177,27 @@ class MainActivity : Activity() {
             appendLine("保存済み端末:")
             store.peers().forEach {
                 val age=if(it.seen<=0) "未受信" else ((now-it.seen).coerceAtLeast(0)/1000).toString()+"秒前"
-                appendLine("  "+it.name+" "+it.id.take(8)+" "+it.host+" 最終発見:"+age+
+                val stamp=if(it.seen<=0) "なし" else DateFormat.getDateTimeInstance(
+                    DateFormat.SHORT,DateFormat.MEDIUM).format(Date(it.seen))
+                appendLine("  "+LanDiagnostics.safePeerName(it.name)+" "+it.id.take(8)+" "+it.host+
+                    " 最終発見:"+stamp+"（"+age+"）"+
                     " "+if(it.online(now)) "ONLINE" else "OFFLINE")
             }
         }
+        val reportView=TextView(this).apply {
+            text=report;textSize=12f;setTextIsSelectable(true)
+            typeface=android.graphics.Typeface.MONOSPACE
+            setPadding(24,8,24,8)
+        }
         AlertDialog.Builder(this).setTitle("LAN診断")
-            .setMessage(report)
+            .setView(ScrollView(this).apply { addView(reportView) })
             .setPositiveButton("コピー") { _,_ ->
                 val clipboard=getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("IP Messenger LAN診断",report))
                 toast("LAN診断をコピーしました")
             }
             .setNeutralButton("再探索・再送") { _,_ ->
-                store.retry();MessengerService.engine?.wake()
+                MessengerService.engine?.wake() ?: store.retry()
                 toast("探索と保留送信を再試行します")
             }
             .setNegativeButton("閉じる",null).show()
@@ -201,7 +212,10 @@ class MainActivity : Activity() {
             isChecked=prefs.getBoolean("enabled",false)
             setOnCheckedChangeListener { _,enabled ->
                 prefs.edit().putBoolean("enabled",enabled).apply()
-                if(enabled) startReceiver() else stopService(Intent(this@MainActivity,MessengerService::class.java))
+                if(enabled) startReceiver() else {
+                    store.offline()
+                    stopService(Intent(this@MainActivity,MessengerService::class.java))
+                }
                 renderPeers()
             }
         })
@@ -225,3 +239,4 @@ class MainActivity : Activity() {
             }.setNegativeButton("閉じる",null).show()
     }
 }
+

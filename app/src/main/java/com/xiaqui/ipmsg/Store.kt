@@ -65,6 +65,12 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
             "id=?",arrayOf(id))
     }
     @Synchronized fun offline() { writableDatabase.execSQL("UPDATE peers SET seen=0") }
+    @Synchronized fun offline(ids: Collection<String>) {
+        if(ids.isEmpty()) return
+        val values=ids.distinct()
+        val placeholders=values.joinToString(",") { "?" }
+        writableDatabase.execSQL("UPDATE peers SET seen=0 WHERE id IN ($placeholders)",values.toTypedArray())
+    }
     @Synchronized fun enqueue(ids: Collection<String>, self: String, selfName: String, body: String,
         now: Long = System.currentTimeMillis()): String {
         require(Protocol.validText(body))
@@ -116,7 +122,14 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
         writableDatabase.execSQL("UPDATE letters SET attempts=attempts+1,next=? WHERE id=? AND peer=? AND incoming=0 AND state='PENDING'",
             arrayOf(now+delay,letter.id,letter.peer))
     }
-    @Synchronized fun retry() { writableDatabase.execSQL("UPDATE letters SET next=0,attempts=0 WHERE state='PENDING'") }
+    /**
+     * Reconnection/manual wake may shorten a long backoff, but never below ten seconds from now.
+     * Already-due/new letters stay due and attempt history is preserved.
+     */
+    @Synchronized fun retry(now: Long = System.currentTimeMillis()) {
+        writableDatabase.execSQL("UPDATE letters SET next=MIN(next,?) WHERE state='PENDING'",
+            arrayOf(now+10000L))
+    }
     @Synchronized fun letters(incoming: Boolean? = null): List<Letter> {
         val where = if(incoming == null) "" else " WHERE incoming=" + if(incoming) "1" else "0"
         return readableDatabase.rawQuery("SELECT id,peer,name,body,incoming,created,state,attempts,next FROM letters$where ORDER BY created DESC,rowid DESC",null).use { c ->
@@ -148,3 +161,4 @@ object Identity {
         return KeyPair(store.getCertificate(alias).publicKey,store.getKey(alias,null) as java.security.PrivateKey)
     }
 }
+

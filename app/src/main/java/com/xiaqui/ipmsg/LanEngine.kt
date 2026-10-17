@@ -45,6 +45,7 @@ class LanEngine(private val context: Context, private val store: Store,
     private var multicast: WifiManager.MulticastLock? = null
     private var callbackRegistered = false
     private val diagnostics = LanDiagnostics()
+    private val selfId = Protocol.id(pair.public)
     private val lanPrefixes = java.util.concurrent.ConcurrentHashMap<Network,Set<String>>()
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -56,26 +57,24 @@ class LanEngine(private val context: Context, private val store: Store,
             store.retry(); scheduleTick()
         }
         override fun onLost(network: Network) {
-            val before = lanPrefixes.values.flatten().toSet()
             lanPrefixes.remove(network)
-            val remaining = networks().size
             val after = lanPrefixes.values.flatten().toSet()
-            diagnostics.network("切断",network.toString()+" 残りLAN="+remaining)
-            // Store has one global seen timestamp per peer. Do not clear healthy peers on another
-            // active LAN; globally expire only when no prior prefix remains reachable.
-            if(LanNetworkPolicy.clearPeersAfterLost(remaining) ||
-                LanNetworkPolicy.prefixMembershipLost(before,after)) store.offline()
+            diagnostics.network("切断",network.toString()+" 残りIPv4 LAN="+lanPrefixes.size)
+            if(after.isEmpty()) store.offline()
+            else expirePeersOutside(after,"切断")
             scheduleTick()
         }
         override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
+            val previous = lanPrefixes[network]
             val current = ipv4Prefixes(lp)
-            val before = lanPrefixes.values.flatten().toSet()
             if(current.isEmpty()) lanPrefixes.remove(network) else lanPrefixes[network] = current
             val after = lanPrefixes.values.flatten().toSet()
-            if(LanNetworkPolicy.prefixMembershipLost(before,after)) store.offline()
+            if(previous != null && previous != current) {
+                if(after.isEmpty()) store.offline() else expirePeersOutside(after,"構成変更")
+            }
             diagnostics.network("構成変更",network.toString()+" prefix="+
                 if(current.isEmpty()) "IPv4なし" else current.joinToString(","))
-            store.retry(); scheduleTick()
+            scheduleTick()
         }
     }
     private fun scheduleTick() {
@@ -90,9 +89,24 @@ class LanEngine(private val context: Context, private val store: Store,
         } == true
     }
     private fun local(address: InetAddress): Boolean = networks().any { network ->
+        onNetwork(address,network)
+    }
+    private fun onNetwork(address: InetAddress, network: Network): Boolean =
         cm.getLinkProperties(network)?.linkAddresses?.any { link ->
             Protocol.onPrefix(address,link.address,link.prefixLength)
         } == true
+    private fun reachableNetworks(host: String, candidates: List<Network>): List<Network> =
+        LanNetworkPolicy.parseIpv4(host)?.let { address ->
+            candidates.filter { onNetwork(address,it) }
+        }.orEmpty()
+    private fun expirePeersOutside(prefixes: Set<String>, reason: String) {
+        if(prefixes.isEmpty()) return
+        val expired=store.peers().filter { it.seen > 0 &&
+            !LanNetworkPolicy.hostOnPrefixes(it.host,prefixes) }.map { it.id }
+        if(expired.isNotEmpty()) {
+            store.offline(expired)
+            diagnostics.network("端末失効",reason+" LAN外="+expired.joinToString(",") { it.take(8) })
+        }
     }
     private fun ipv4Prefixes(lp: android.net.LinkProperties): Set<String> =
         lp.linkAddresses.filter { it.address is Inet4Address && it.prefixLength in 1..32 }.map { link ->
@@ -104,7 +118,9 @@ class LanEngine(private val context: Context, private val store: Store,
         }.toSet()
     fun start() {
         check(running.compareAndSet(false,true))
-        store.offline()
+        // A recent signed discovery remains valid across a quick process/service restart and
+        // expires naturally after 35 seconds. Explicit LAN loss still invalidates it below.
+        diagnostics.network("サービス開始","保存済み最終発見時刻を保持")
         multicast = (context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
             ?.createMulticastLock("ipmsg-discovery")?.apply { setReferenceCounted(false) }
         runCatching { multicast?.acquire() }.onFailure {
@@ -133,21 +149,34 @@ class LanEngine(private val context: Context, private val store: Store,
                             socket.receive(packet)
                             val host = packet.address.hostAddress ?: "?"
                             packetHost = host
-                            diagnostics.udpReceived(host)
                             if(!local(packet.address) || networks().isEmpty()) {
                                 diagnostics.helloRejected(host,"有効LAN外")
+                                diagnostics.udpReceived(host,UdpReceiveResult.DROPPED,"有効LAN外")
                                 continue
                             }
                             val now = System.currentTimeMillis()
                             val hello = Protocol.readHello(packet.data.copyOf(packet.length),now)
-                            if(hello.id != Protocol.id(pair.public)) {
-                                if(store.discover(hello,host,now))
+                            if(hello.id == selfId) {
+                                diagnostics.udpReceived(host,UdpReceiveResult.SELF,"署名OK")
+                            } else {
+                                if(store.discover(hello,host,now)) {
                                     diagnostics.helloAccepted(hello.id,host)
-                                else diagnostics.helloRejected(host,"候補制限または鍵不一致")
+                                    diagnostics.udpReceived(host,UdpReceiveResult.PEER,
+                                        "署名OK "+hello.id.take(8))
+                                } else {
+                                    diagnostics.helloRejected(host,"候補制限または鍵不一致")
+                                    diagnostics.udpReceived(host,UdpReceiveResult.DROPPED,
+                                        "候補制限または鍵不一致")
+                                }
                             }
                         } catch(_: java.net.SocketTimeoutException) {
                         } catch(e: Protocol.HelloValidationException) {
                             diagnostics.helloRejected(packetHost,e.stage)
+                            diagnostics.udpReceived(packetHost,UdpReceiveResult.DROPPED,e.stage)
+                        } catch(e: Exception) {
+                            val reason="処理例外 "+e.javaClass.simpleName
+                            diagnostics.helloRejected(packetHost,reason)
+                            diagnostics.udpReceived(packetHost,UdpReceiveResult.DROPPED,reason)
                         }
                     }
                 }
@@ -200,24 +229,29 @@ class LanEngine(private val context: Context, private val store: Store,
             status = "Wi-Fi/LAN未接続・送信は保留"; return
         }
         val hello = Protocol.hello(prefs.getString("name",android.os.Build.MODEL)!!,pair,System.currentTimeMillis())
+        val peerSnapshot = store.peers()
         nets.forEach { network ->
             runCatching {
                 DatagramSocket().use { socket ->
                     network.bindSocket(socket); socket.broadcast = true
-                    val targets = mutableSetOf("255.255.255.255")
+                    val targets = linkedMapOf("255.255.255.255" to false)
                     cm.getLinkProperties(network)?.linkAddresses?.forEach { link ->
                         val bytes = link.address.address
                         if(bytes.size == 4 && link.prefixLength in 1..30) {
                             val ip = bytes.fold(0L) { n,b -> (n shl 8) or (b.toLong() and 255) }
                             val mask = (0xffffffffL shl (32-link.prefixLength)) and 0xffffffffL
                             val broad = (ip and mask) or (mask xor 0xffffffffL)
-                            targets.add((3 downTo 0).joinToString(".") { ((broad shr (it*8)) and 255).toString() })
+                            targets[(3 downTo 0).joinToString(".") { ((broad shr (it*8)) and 255).toString() }] = false
                         }
                     }
-                    targets.forEach { address ->
+                    peerSnapshot.asSequence().filter { it.trusted }.take(32).forEach { peer ->
+                        val address=LanNetworkPolicy.parseIpv4(peer.host)
+                        if(address != null && onNetwork(address,network)) targets[peer.host] = true
+                    }
+                    targets.forEach { (address,knownPeer) ->
                         runCatching {
                             socket.send(DatagramPacket(hello,hello.size,InetAddress.getByName(address),Protocol.PORT))
-                        }.onSuccess { diagnostics.udpSent(address) }
+                        }.onSuccess { diagnostics.udpSent(address,knownPeer) }
                             .onFailure { diagnostics.network("UDP送信失敗",address+" "+it.javaClass.simpleName) }
                     }
                 }
@@ -233,26 +267,32 @@ class LanEngine(private val context: Context, private val store: Store,
         if(sending.compareAndSet(false,true)) {
             try { sender.execute {
                 try {
-                    store.pending(System.currentTimeMillis()).filter { it.peer in available }.take(16).forEach { letter ->
+                    val currentNow=System.currentTimeMillis()
+                    val activeNetworks=networks()
+                    val due=LanRetryPolicy.select(store.pending(currentNow),store.peers(),currentNow,16) {
+                        reachableNetworks(it,activeNetworks).isNotEmpty()
+                    }.map { candidate -> DeliveryAttempt(candidate.letter,candidate.peer,
+                        reachableNetworks(candidate.peer.host,activeNetworks),candidate.offlineFallback) }
+                    due.forEach { attempt ->
                         if(!running.get()) return@execute
-                        val peer = store.peers().find { it.id == letter.peer && it.trusted && it.online(System.currentTimeMillis()) }
-                            ?: return@forEach
-                        store.attempted(letter,System.currentTimeMillis())
-                        runCatching { send(letter,peer,networks()) }
+                        if(store.peers().any { it.id == attempt.peer.id && it.trusted }) {
+                            store.attempted(attempt.letter,System.currentTimeMillis())
+                            runCatching { send(attempt.letter,attempt.peer,attempt.networks,attempt.offlineFallback) }
+                        }
                     }
                 } finally { sending.set(false) }
             } } catch(_: java.util.concurrent.RejectedExecutionException) { sending.set(false) }
         }
     }
 
-    private fun send(letter: Letter,peer: Peer,nets: List<Network>) {
+    private fun send(letter: Letter,peer: Peer,nets: List<Network>,offlineFallback: Boolean) {
         val recipient = Protocol.key(peer.key)
         val request = Protocol.seal(JSONObject().put("type","TEXT").put("id",letter.id)
             .put("body",letter.body),pair,recipient)
         // Each recipient and each delivery has its own ACK, including broadcasts.
         nets.forEach { network ->
             if(!running.get()) return
-            diagnostics.tcpAttempt(peer.id,peer.host)
+            diagnostics.tcpAttempt(peer.id,peer.host,offlineFallback)
             var connected = false
             var stage = "TCP接続"
             val success = runCatching {
@@ -331,6 +371,30 @@ class LanEngine(private val context: Context, private val store: Store,
         sockets.forEach { runCatching { it.close() } }; sockets.clear()
         if(callbackRegistered) runCatching { cm.unregisterNetworkCallback(callback) }
         multicast?.let { if(it.isHeld) it.release() }
-        store.offline()
+    }
+
+    private data class DeliveryAttempt(val letter: Letter,val peer: Peer,
+        val networks: List<Network>,val offlineFallback: Boolean)
+}
+
+internal data class DeliveryCandidate(val letter: Letter,val peer: Peer,val offlineFallback: Boolean)
+
+internal object LanRetryPolicy {
+    /**
+     * ONLINE peers can drain their due queue. OFFLINE peers get at most one known-IP probe per
+     * tick; Store.attempted() then enforces the persistent 10s..5min exponential backoff.
+     */
+    fun select(pending: List<Letter>,peers: List<Peer>,now: Long,limit: Int,
+        reachable: (String) -> Boolean): List<DeliveryCandidate> {
+        val trusted=peers.filter { it.trusted }.associateBy { it.id }
+        val offlineSelected=mutableSetOf<String>()
+        return pending.asSequence().mapNotNull { letter ->
+            val peer=trusted[letter.peer] ?: return@mapNotNull null
+            if(!reachable(peer.host)) return@mapNotNull null
+            val offline=!peer.online(now)
+            if(offline && !offlineSelected.add(peer.id)) return@mapNotNull null
+            DeliveryCandidate(letter,peer,offline)
+        }.take(limit.coerceAtLeast(0)).toList()
     }
 }
+
