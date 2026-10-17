@@ -91,35 +91,49 @@ jobs:
           TITLE="IP Messenger test ${SHORT_SHA} (run ${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT})"
           printf 'Automated test prerelease. Not delivered to Google Drive.\n\nsource_sha=%s\nrun_id=%s\nrun_attempt=%s\n' \
             "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > release-notes.txt
+          # Keep the assets private as a draft until every downloaded-byte check passes.
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" \
             --title "$TITLE" \
             --notes-file release-notes.txt \
+            --draft \
             --prerelease \
             ipmsg-debug.apk SHA256SUMS provenance.txt signing.txt badging.txt
 
+          RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -1)
+          test -n "$RELEASE_ID"
+          ASSET_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate \
+            --jq '.[] | select(.name == "ipmsg-debug.apk") | .id' | head -1)
+          ASSET_SIZE=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate \
+            --jq '.[] | select(.name == "ipmsg-debug.apk") | .size' | head -1)
+          test -n "$ASSET_ID"
+
           mkdir release-verify
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern ipmsg-debug.apk --dir release-verify
+          gh api -H "Accept: application/octet-stream" \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID" > release-verify/ipmsg-debug.apk
           EXPECTED_SHA=$(cut -d' ' -f1 SHA256SUMS)
           DOWNLOADED_SHA=$(sha256sum release-verify/ipmsg-debug.apk | cut -d' ' -f1)
           LOCAL_SIZE=$(stat -c %s ipmsg-debug.apk)
           DOWNLOADED_SIZE=$(stat -c %s release-verify/ipmsg-debug.apk)
           test "$DOWNLOADED_SHA" = "$EXPECTED_SHA"
           test "$DOWNLOADED_SIZE" = "$LOCAL_SIZE"
+          test "$ASSET_SIZE" = "$LOCAL_SIZE"
 
           BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs --min-sdk-version 23 release-verify/ipmsg-debug.apk > release-signing.txt
           EXPECTED_CERT=$(keytool -exportcert -keystore "$ANDROID_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | sha256sum | cut -d' ' -f1)
           grep -qi "certificate SHA-256 digest: $EXPECTED_CERT" release-signing.txt
 
-          RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id')
-          ASSET_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name == "ipmsg-debug.apk") | .id')
-          ASSET_SIZE=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name == "ipmsg-debug.apk") | .size')
-          RELEASE_URL=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.html_url')
-          test -n "$RELEASE_ID"
-          test -n "$ASSET_ID"
-          test "$ASSET_SIZE" = "$LOCAL_SIZE"
+          # Only verified assets become visible as a prerelease.
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false -F prerelease=true > release-published.json
+          test "$(jq -r '.draft' release-published.json)" = "false"
+          test "$(jq -r '.prerelease' release-published.json)" = "true"
+          test "$(jq -r '.tag_name' release-published.json)" = "$TAG"
+          RELEASE_URL=$(jq -r '.html_url' release-published.json)
+          test -n "$RELEASE_URL"
           {
             echo "### Test prerelease verified"
             echo "- Source SHA: \`$SOURCE_SHA\`"
