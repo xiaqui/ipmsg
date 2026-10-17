@@ -3,6 +3,15 @@
 更新: 2026-10-17 JST（最新CI記録は2026-10-16 UTC）
 状態: **Android実機LAN探索・オンライン判定の診断／局所修正をPR #4でmainへマージ済み。Windows版は開始していない。Artifact容量回復後のAPK生成・配送と実機検証が未完了。**
 
+## GitHub Releases直接添付の実証実験（2026-10-17 JST）
+
+- 目的: Actions Artifact容量制限を迂回し、同一buildジョブで署名APKをテスト用GitHub prereleaseへ直接添付する。
+- 変更: 既存のunit test／Lint／assemble／署名証明書／package／minSdk／SHA-256検査を維持し、`actions/upload-artifact` を使用しない。
+- 安全条件: PR／通常build workflowはread-only。Release専用workflowだけwrite権限を持ち、mainへの識別付きmerge pushまたはmain refのworkflow_dispatchだけでprereleaseを作成する。同じRelease jobでAPKを再取得し、サイズ、SHA-256、署名証明書を再照合する。
+- Google Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` は変更しない。Windows版開発も開始しない。
+- 共通手順: [GITHUB_RELEASE_APK_DELIVERY_JA.md](GITHUB_RELEASE_APK_DELIVERY_JA.md)
+- 状態: 実装・PR・独立レビュー・mainマージ・テストRelease実行前。成功値は実行後に追記する。
+
 ## Android LAN探索・オンライン判定修正（2026-10-17 JST）
 
 - PR: https://github.com/xiaqui/ipmsg/pull/4
@@ -26,14 +35,15 @@
 
 GitHub ActionsのArtifactストレージ容量制限によるupload失敗は既知の環境要因であり、開発停止条件にしない。unit test、Lint、assembleDebug、署名／badging／SHA検査までの結果を合否判断し、artifact uploadだけの失敗は分離して記録する。容量回復前に古いAPKを修正版として再配送しない。 最終run `38925651415` では `ipmsg-debug` と `ipmsg-checks` の両uploadが `Artifact storage quota has been hit. Usage is recalculated every 6-12 hours.` で失敗した。
 
-### 容量回復後のAPK生成・固定URL配送再開
+### 修正版APK生成・固定URL配送再開（Release経路）
 
-1. 本節の完成main SHAを確認し、必ずそのSHAの `build-android-apk.yml` をmainでworkflow_dispatchする。古い成功runを流用しない。
-2. unit test（SDK 23/28/34）、Lint、assembleDebug、署名alias／証明書SHA-256、package=`com.xiaqui.ipmsg`、minSdk=23が成功したrun IDとartifact IDを確定する。
-3. `ipmsg-debug` ZIPを取得し、`ipmsg-debug.apk`、`SHA256SUMS`、`provenance.txt`、`signing.txt`、`badging.txt`を照合する。ZIP自体をAPKとして扱わない。
-4. APKのサイズ／SHA-256を記録し、Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` の内容を実APKで更新する。Drive上のrenameやフォルダ移動は固定IDが変わらない限り可。共有権限とURLを再確認する。
-5. Driveから再取得し、元APKとのサイズ、SHA-256、byte-for-byte一致を検証する。run／artifact／APK／Driveの値を本書へ追記する。
-6. XZ1 Compact、Rakuten Hand、Ace IIIへ導入し、双方向UDP探索、署名、最終発見、TCP、ACK、VPNを診断画面で採取する。実機成功前に「実機修正済み」と断定しない。
+1. 本節の完成main SHAを確認し、必ずmain refの `release-android-apk.yml` をworkflow_dispatchする。古いReleaseや過去artifactを流用しない。
+2. 同一jobでunit test（SDK 23/28/34）、Lint、assembleDebug、署名alias／証明書SHA-256、package=`com.xiaqui.ipmsg`、minSdk=23が成功したrun IDを確定する。
+3. workflowがdraftへ添付したAPKを再取得し、サイズ、SHA-256、署名証明書を再照合してからprerelease公開したことを確認する。source SHA、run ID、Release ID/tag、APK asset IDを記録する。
+4. Releaseの `ipmsg-debug.apk` を取得し、同時添付の `SHA256SUMS`、`provenance.txt`、`signing.txt`、`badging.txt`と照合する。Source code ZIPをAPKとして扱わない。
+5. APKのサイズ／SHA-256を記録し、Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` の内容を実APKで更新する。Drive上のrenameやフォルダ移動は固定IDが変わらない限り可。共有権限とURLを再確認する。
+6. Driveから再取得し、Release assetとのサイズ、SHA-256、byte-for-byte一致を検証する。run／Release／asset／APK／Driveの値を本書へ追記する。
+7. XZ1 Compact、Rakuten Hand、Ace IIIへ導入し、双方向UDP探索、署名、最終発見、TCP、ACK、VPNを診断画面で採取する。実機成功前に「実機修正済み」と断定しない。
 
 
 ## 実装／コミット／PR
@@ -115,11 +125,11 @@ Driveから再取得したAPKは **2,105,118 bytes**、SHA-256 `6ffef378b2d11152
 
 ### 次回以降の固定URL配送
 
-1. 対象main SHAと成功run/artifactを確定し、ZIPを取得。
-2. ZIP内の実APKを展開し、CI記録のサイズ／SHA-256と照合。ZIPそのものをAPK名にしない。
+1. 対象main SHAと成功run、Release ID/tag、APK asset IDを確定し、Releaseの `ipmsg-debug.apk` を取得。
+2. Release assetを同時添付のSHA／署名／provenance記録と照合。Source code ZIPをAPK名にしない。
 3. Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` の現在メタデータとファイル名 `ipmsg-debug.apk` を確認。
 4. MIME `application/vnd.android.package-archive` の実APKで同じ固定IDを更新し、URLを維持。
-5. Driveから再取得し、サイズ・SHA-256・byte-for-byte一致を確認して本書を更新。
+5. Driveから再取得し、Release assetとのサイズ・SHA-256・byte-for-byte一致を確認して本書を更新。
 
 wolf-chessの配送正本・事故例・完走ループ・自走配送資料の4本は参照済み。新しいツール定義を優先する。
 

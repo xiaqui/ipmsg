@@ -1,4 +1,5 @@
 name: Build Android APK
+
 on:
   workflow_dispatch:
   push:
@@ -7,6 +8,10 @@ on:
   pull_request:
     branches: [main]
     paths-ignore: ['docs/**', '**/*.md']
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -73,24 +78,3 @@ jobs:
           print(f"Unit test results: {total} tests, {failures} failures/errors, {skipped} skipped")
           PY
           cat signing.txt SHA256SUMS provenance.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          retention-days: 3
-          name: ipmsg-debug
-          path: |
-            ipmsg-debug.apk
-            SHA256SUMS
-            provenance.txt
-            signing.txt
-            badging.txt
-          if-no-files-found: error
-      - name: Upload test and lint results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          retention-days: 3
-          name: ipmsg-checks
-          path: |
-            app/build/reports/tests/
-            app/build/test-results/
-            app/build/reports/lint-results-debug.*
