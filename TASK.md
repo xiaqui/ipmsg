@@ -1,13 +1,15 @@
 # TASK.md — 家庭内 IP Messenger 仕様書・実装指示書
 
 更新日: 2026-10-17（JST）
-状態: **Android実機LAN探索・オンライン判定の診断／局所修正はPR #4でmainへマージ済み**（実装SHA `38e5c831c2ab03ab44fb1ab412f69b673a528c57`）。署名APKのGitHub Releases直接添付実証はPR #6/#7、main SHA `a0da626b412b0224acdc6ddf47368f0e1ed975d6`、run `38997429136` で成功。Google Drive固定ファイルは未変更、実機検証は未完了。Windows版は開始していない。最新のSHA／PR／run／Release／asset／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
+状態: **Android実機LAN探索・オンライン判定の第2段階局所修正はPR #9でmainへマージ済み**（完成main SHA `bc4ec6127c65ae75654d967d222f8669597357a2`、最終CI `39014364854`、63件成功）。既知IPへの署名UDP再探索と有界なOFFLINE TCP配送、受信元別診断、callback競合対策を追加した。3端末の実機回帰と、このSHAからのRelease APK生成・Drive上書き配送は未完了。既存Drive APKは第2段階修正前なので今回の修正版として扱わない。Windows/iOS版は開始していない。最新のSHA／PR／run／Release／asset／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
 
 ## 0. 現行最優先指示（2026-10-17）
 
 - Xperia XZ1 CompactのLAN探索・ONLINE判定不安定を最優先とし、Rakuten Handの成功例とAce III宛て保留0回を診断する。
 - Nearby Gamesの `docs/LAN_NSD_MULTICAST_DISCOVERY_FIX_2026-10-16_JA.md` と比較し、UDP送受信、署名検証、最終発見時刻、TCP接続、ACK、VPN、LAN prefixを可視化する。
 - 通常のConnectivity callback churnでは最終発見を消さず、全LAN消失または有効IPv4 prefix membership喪失時だけ無効化する。原因に応じた局所修正に限定する。
+- ブロードキャスト探索を維持し、承認済み既知IPへ署名UDPユニキャストを併用する。OFFLINE表示でも現在LAN内の既知IPへ、認証・暗号化・ACKを省略せず有界バックオフでTCP配送を試す。
+- 実機診断ではUDP送信元、自己/他端末/破棄、破棄理由、絶対最終発見時刻、OFFLINE既知IP TCP試行を採取する。TCP成功をUDP探索成功と混同しない。
 - 自動テスト、独立レビュー、P1/P2修正、PRマージまで自走する。実機未検証は実機合格と書かない。
 - GitHub Actions Artifact容量制限を回避するため、署名APKはmain限定のRelease workflowでdraftへ直接添付し、再取得したAPKのSHA-256・サイズ・署名証明書を検証後にprerelease公開する。Drive固定IDを更新する場合はRelease assetと再照合し、`docs/WORK_PROGRESS.md` に記録する。
 - **Windows版開発は開始しない。**
@@ -203,3 +205,4 @@ LINE風のアカウント制チャットやグループチャットではなく�
 - 不明端末/未承認送信元が勝手に全画面を奪えないこと。
 
 **完了報告は実装・ビルド・自動テスト・APK配送・実機検証を分けること。未検証項目は未検証と書く。**
+

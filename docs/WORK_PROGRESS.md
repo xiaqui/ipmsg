@@ -1,7 +1,48 @@
 # Work進捗・再開手順
 
 更新: 2026-10-17 JST（最新CI記録は2026-10-17 UTC）
-状態: **Android実機LAN探索・オンライン判定修正はPR #4でmainへマージ済み。GitHub Releasesへの署名APK直接添付実証はPR #6/#7で完了。Google Drive固定ファイルは未変更、実機検証は未完了。Windows版は開始していない。**
+状態: **LAN探索・オンライン判定の第2段階修正はPR #9でmainへマージ済み。コード、63件テスト、Lint、assemble、署名検査、独立レビューは完了。3端末での実機再検証と、この完成main SHAからのRelease APK生成・Drive配送は未実施。Windows/iOS版は開始していない。**
+
+## Android LAN探索・オンライン判定 第2段階（2026-10-17 JST）
+
+- 実装PR: [#9](https://github.com/xiaqui/ipmsg/pull/9)
+- PR最終HEAD: `e3667d690f67dc5bb3899d730ef7e77884449f8c`
+- 完成main実装SHA（squash merge）: `bc4ec6127c65ae75654d967d222f8669597357a2`
+- 最終PR CI: [39014364854](https://github.com/xiaqui/ipmsg/actions/runs/39014364854)、job `117343285124`。Robolectric 63件、失敗/エラー0、未実行0。Lint、assembleDebug、package=`com.xiaqui.ipmsg`、minSdk=23、共有署名のv1/v2と証明書SHA-256照合に成功。
+- PR merge ref用の一時APKは2,129,971 bytes、SHA-256 `6a3222386c926abe9efb6556ad77ad993365a4a15a8499213508e37180bb48b8`。`source_sha=1994d48d1ea75a98f2d58cb0c051387931cb7fb3` はPR merge refであり完成main SHAではない。保存・Release添付・配送しておらず、修正版配送物として使用禁止。
+
+### 実機データから確認済みの事実と未確定の仮説
+
+- 確認済み: Hand ↔ Ace III、Hand → XZ1、XZ1 → Hand（ACKあり）には成功例がある。したがって「XZ1/Android 8はUDP/TCP通信不能」とは扱わない。
+- 確認済み: 最新診断のXZ1はUDP送信48/受信48、探索検証成功0、直近受信元192.168.1.25（自端末IP）。ただし48件すべてが自己受信だった証拠ではない。過去のTCP成功もUDP探索成功の証拠ではない。
+- コードで確認済み: 保留送信は従来ONLINE端末だけに絞られ、OFFLINE表示のAce IIIにはTCP試行が入らなかった。サービス開始/終了や回線状態処理で最終発見時刻を広く消す経路もあった。
+- 仮説: NoRoot Firewall、端末固有の省電力、Wi-Fi再接続、callback順序がUDP受信継続へ影響する可能性はある。停止後に改善した事実はあるが、単独原因とは未確定。
+
+### 局所修正
+
+- UDP受信を送信元IP、時刻、`自己HELLO` / `他端末HELLO` / `破棄`、破棄理由で分類。署名成功/拒否と分け、本文・公開鍵・秘密鍵は記録しない。
+- 既存のUDPブロードキャスト探索を維持し、承認済み端末の現在LAN内の既知IPv4へ署名HELLOをユニキャストする。
+- OFFLINE表示でも、承認済みかつ現在LAN内の既知IPへ1端末1件/周期でTCP配送を試す。試行前に永続化し、10秒から最大5分の指数バックオフ、3秒接続/5秒読取/8秒総時間制限を維持する。
+- callbackごとに全peerを即時OFFLINE化しない。現在の非VPN Wi-Fi/Ethernetを遅延再照合し、空状態を再確認した場合だけ全失効する。世代番号で古い確認予約とTOCTOUを無効化し、別prefixのpeerだけ選択失効する。
+- UDPのタイムアウト以外のI/O障害は握りつぶさず、待受ソケットを診断記録付きで再生成する。短いサービス再起動では35秒以内の署名済み最終発見を保持し、受信機能を明示OFFにした場合は失効する。
+- 診断画面をAndroid 8の小画面でスクロール・文字選択可能にし、絶対時刻と経過時間を併記した。コピー機能を維持。
+- 公開鍵ID、HELLO署名検証、本文暗号化/署名、認証ACK、message ID照合、重複排除は変更していない。古いIPが別端末へ再割当てされても、意図した公開鍵で検証できるACKなしに配送済みにならない。
+
+### レビューと残る実機確認
+
+- 独立レビューで、API 23の`onAvailable(null LinkProperties) → old onLost`、古い空確認予約、世代検査後のTOCTOUをP2として検出し、遅延二段確認・世代無効化・同期副作用・回帰テストで解消。最終HEADの残存P1/P2なし。
+- GitHub CodexレビューのP2「UDPソケットI/O障害を内側で握りつぶす」を修正し、inline threadを解決。全レビューthread解決済み。
+- **未検証**: XZ1でのUDP内訳（48件の自己/他端末/破棄分類）、XZ1 ↔ Hand回帰、Hand ↔ Ace III回帰、XZ1 → Ace IIIのOFFLINE既知IP TCP試行・ACK、Wi-Fi OFF/ON、アプリ/サービス再起動、ネットワーク切替、消灯/省電力、NoRoot Firewall ON/OFF。実機で成功するまで「不具合修正確認済み」と報告しない。
+
+### 完成main SHAからのAPK再生成・固定Drive配送（容量回復後）
+
+1. mainが `bc4ec6127c65ae75654d967d222f8669597357a2` 以上であることを確認し、main refの `release-android-apk.yml` を手動実行する。PR run、一時APK、既存Release、古いArtifactを流用しない。
+2. 同一job内のunit test、Lint、assembleDebug、alias、v1/v2署名、証明書SHA-256、package、minSdk、SHA256SUMS、provenance検査が全て成功し、非公開draftへ添付したAPKを再取得・再照合後にprerelease公開したrunだけを採用する。
+3. run ID、main source SHA、Release ID/tag、APK asset ID、APKサイズ/SHA-256/証明書を本書へ追記する。Releaseの`ipmsg-debug.apk`以外を配送しない。
+4. 検証済みAPKでDrive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` の内容を上書きし、固定URLと共有権限を維持する。rename/フォルダ移動は固定IDが変わらない範囲だけ可。
+5. Driveから再取得し、Release assetとサイズ、SHA-256、byte-for-byte一致を確認してから配送完了とする。
+
+現在のDrive固定IDは、2026-10-17 13:10:25 JSTにテストRelease asset `649374811`（source `a0da626b412b0224acdc6ddf47368f0e1ed975d6`、2,118,069 bytes、SHA-256 `a1a4de64fbfb65bdebd618b407d928540f8b56c078da36cd62b6c3471dcdb342`）で上書きし、再取得一致まで確認済み。ただしこれは第2段階修正前のAPKであり、今回の修正版として扱わない。
 
 ## GitHub Releases直接添付の実証実験（2026-10-17 JST）
 
@@ -20,7 +61,7 @@
 - 安全境界: PR／通常build workflowは `contents: read`。Release専用workflowだけ `contents: write` で、main ref以外の手動実行を拒否。APKはdraftのまま再取得検査し、全検査成功後だけprereleaseとして公開。
 - 初回run [38996973493](https://github.com/xiaqui/ipmsg/actions/runs/38996973493) はdraft作成直後の一覧反映遅延で停止。Release ID `415548211`／APK asset ID `649359200` はdraftのまま非公開で、本番・配布物として扱わない。
 - 独立レビュー: PR #6でPR書込権限、main外dispatch、公開前検査、旧Artifact手順をP1/P2として修正。PR #7で有界リトライと完全tag一致を再レビューし、最終残存P1/P2なし。全inline thread解決済み。
-- Google Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` は変更していない。このテストReleaseのAPKをDrive配送済みとは扱わない。Windows版開発も開始していない。
+- Google Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` は後続作業でこのRelease assetへ上書き済み。サイズ・SHA-256・byte-for-byte一致を再取得確認した。固定IDとURLは維持。Windows版開発は開始していない。
 - 共通手順: [GITHUB_RELEASE_APK_DELIVERY_JA.md](GITHUB_RELEASE_APK_DELIVERY_JA.md)
 
 ## Android LAN探索・オンライン判定修正（2026-10-17 JST）
@@ -150,3 +191,4 @@ Android6 Z3TC、Android7 Z4T、Android8 XZ1 Compact、Android14 Ace IIIでの導
 初回は同じWi-Fiで、双方の設定の「常駐受信を有効にする」をON、端末名を設定し、相手の設定にある指紋全桁を直接比較して双方で承認する。
 詳細はTESTING.md。ゲストWi-Fiの端末間分離、IPv6専用LAN、時計の大きなずれ、OS省電力の制約に注意する。
 M3の実装はここで停止。配送／実機検収以外でM4以降に進むには別の明示指示を待つ。
+
