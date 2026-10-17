@@ -1,0 +1,132 @@
+name: Release Signed Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' && contains(github.event.head_commit.message, '[release-test]'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Prepare required shared signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "ERROR: Shared signing secrets are missing. Refusing unsigned/debug-key delivery."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-signing.jks"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/android-signing.jks" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+      - name: Verify keystore alias
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          keytool -list -keystore "$ANDROID_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" > /dev/null
+          echo "Shared signing alias verified."
+      - name: Test and build APK
+        run: gradle testDebugUnitTest lintDebug assembleDebug --no-daemon
+      - name: Verify signed APK and record provenance
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs --min-sdk-version 23 "$APK" > signing.txt
+          EXPECTED=$(keytool -exportcert -keystore "$ANDROID_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | sha256sum | cut -d' ' -f1)
+          grep -qi "certificate SHA-256 digest: $EXPECTED" signing.txt
+          "$BUILD_TOOLS/aapt" dump badging "$APK" > badging.txt
+          grep -q "package: name='com.xiaqui.ipmsg'" badging.txt
+          grep -q "sdkVersion:'23'" badging.txt
+          cp "$APK" ipmsg-debug.apk
+          sha256sum ipmsg-debug.apk > SHA256SUMS
+          printf 'source_sha=%s\nrun_id=%s\n' "$SOURCE_SHA" "$GITHUB_RUN_ID" > provenance.txt
+          printf 'apk_size=%s\n' "$(stat -c %s ipmsg-debug.apk)" >> provenance.txt
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          results = [ET.parse(p).getroot() for p in pathlib.Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml")]
+          total = sum(int(r.get("tests", 0)) for r in results)
+          failures = sum(int(r.get("failures", 0)) + int(r.get("errors", 0)) for r in results)
+          skipped = sum(int(r.get("skipped", 0)) for r in results)
+          assert total >= 48 and failures == 0 and skipped == 0, (total, failures, skipped)
+          print(f"Unit test results: {total} tests, {failures} failures/errors, {skipped} skipped")
+          PY
+          cat signing.txt SHA256SUMS provenance.txt
+      - name: Publish and verify test prerelease without Actions Artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${SOURCE_SHA:0:12}"
+          TAG="ipmsg-test-${SHORT_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          TITLE="IP Messenger test ${SHORT_SHA} (run ${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT})"
+          printf 'Automated test prerelease. Not delivered to Google Drive.\n\nsource_sha=%s\nrun_id=%s\nrun_attempt=%s\n' \
+            "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > release-notes.txt
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "$TITLE" \
+            --notes-file release-notes.txt \
+            --prerelease \
+            ipmsg-debug.apk SHA256SUMS provenance.txt signing.txt badging.txt
+
+          mkdir release-verify
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern ipmsg-debug.apk --dir release-verify
+          EXPECTED_SHA=$(cut -d' ' -f1 SHA256SUMS)
+          DOWNLOADED_SHA=$(sha256sum release-verify/ipmsg-debug.apk | cut -d' ' -f1)
+          LOCAL_SIZE=$(stat -c %s ipmsg-debug.apk)
+          DOWNLOADED_SIZE=$(stat -c %s release-verify/ipmsg-debug.apk)
+          test "$DOWNLOADED_SHA" = "$EXPECTED_SHA"
+          test "$DOWNLOADED_SIZE" = "$LOCAL_SIZE"
+
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs --min-sdk-version 23 release-verify/ipmsg-debug.apk > release-signing.txt
+          EXPECTED_CERT=$(keytool -exportcert -keystore "$ANDROID_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | sha256sum | cut -d' ' -f1)
+          grep -qi "certificate SHA-256 digest: $EXPECTED_CERT" release-signing.txt
+
+          RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id')
+          ASSET_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name == "ipmsg-debug.apk") | .id')
+          ASSET_SIZE=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name == "ipmsg-debug.apk") | .size')
+          RELEASE_URL=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.html_url')
+          test -n "$RELEASE_ID"
+          test -n "$ASSET_ID"
+          test "$ASSET_SIZE" = "$LOCAL_SIZE"
+          {
+            echo "### Test prerelease verified"
+            echo "- Source SHA: \`$SOURCE_SHA\`"
+            echo "- Release ID: \`$RELEASE_ID\`"
+            echo "- APK asset ID: \`$ASSET_ID\`"
+            echo "- APK size: \`$LOCAL_SIZE\` bytes"
+            echo "- APK SHA-256: \`$EXPECTED_SHA\`"
+            echo "- Downloaded APK signature: verified against configured keystore"
+            echo "- Release: $RELEASE_URL"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
