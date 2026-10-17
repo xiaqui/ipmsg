@@ -1,6 +1,6 @@
 # Work進捗・再開手順
 
-更新: 2026-10-17 JST（最新CI記録は2026-10-16 UTC）
+更新: 2026-10-17 JST（最新CI記録は2026-10-17 UTC）
 状態: **Android実機LAN探索・オンライン判定修正はPR #4でmainへマージ済み。GitHub Releasesへの署名APK直接添付実証はPR #6/#7で完了。Google Drive固定ファイルは未変更、実機検証は未完了。Windows版は開始していない。**
 
 ## GitHub Releases直接添付の実証実験（2026-10-17 JST）
