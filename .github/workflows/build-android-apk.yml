@@ -9,10 +9,8 @@ on:
     branches: [main]
     paths-ignore: ['docs/**', '**/*.md']
 
-# GitHub Release creation needs repository contents write access. Pull requests from
-# forks are still restricted by GitHub and never execute the release step.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -80,50 +78,3 @@ jobs:
           print(f"Unit test results: {total} tests, {failures} failures/errors, {skipped} skipped")
           PY
           cat signing.txt SHA256SUMS provenance.txt
-      - name: Publish and verify test prerelease without Actions Artifact
-        if: >-
-          github.event_name == 'workflow_dispatch' ||
-          (github.event_name == 'push' && contains(github.event.head_commit.message, '[release-test]'))
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          SHORT_SHA="${SOURCE_SHA:0:12}"
-          TAG="ipmsg-test-${SHORT_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          TITLE="IP Messenger test ${SHORT_SHA} (run ${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT})"
-          printf 'Automated test prerelease. Not delivered to Google Drive.\n\nsource_sha=%s\nrun_id=%s\nrun_attempt=%s\n' \
-            "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > release-notes.txt
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$SOURCE_SHA" \
-            --title "$TITLE" \
-            --notes-file release-notes.txt \
-            --prerelease \
-            ipmsg-debug.apk SHA256SUMS provenance.txt signing.txt badging.txt
-
-          mkdir release-verify
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern ipmsg-debug.apk --dir release-verify
-          EXPECTED_SHA=$(cut -d' ' -f1 SHA256SUMS)
-          DOWNLOADED_SHA=$(sha256sum release-verify/ipmsg-debug.apk | cut -d' ' -f1)
-          LOCAL_SIZE=$(stat -c %s ipmsg-debug.apk)
-          DOWNLOADED_SIZE=$(stat -c %s release-verify/ipmsg-debug.apk)
-          test "$DOWNLOADED_SHA" = "$EXPECTED_SHA"
-          test "$DOWNLOADED_SIZE" = "$LOCAL_SIZE"
-
-          RELEASE_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.id')
-          ASSET_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name == "ipmsg-debug.apk") | .id')
-          ASSET_SIZE=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | select(.name == "ipmsg-debug.apk") | .size')
-          RELEASE_URL=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.html_url')
-          test -n "$RELEASE_ID"
-          test -n "$ASSET_ID"
-          test "$ASSET_SIZE" = "$LOCAL_SIZE"
-          {
-            echo "### Test prerelease verified"
-            echo "- Source SHA: \`$SOURCE_SHA\`"
-            echo "- Release ID: \`$RELEASE_ID\`"
-            echo "- APK asset ID: \`$ASSET_ID\`"
-            echo "- APK size: \`$LOCAL_SIZE\` bytes"
-            echo "- APK SHA-256: \`$EXPECTED_SHA\`"
-            echo "- Release: $RELEASE_URL"
-          } | tee -a "$GITHUB_STEP_SUMMARY"
