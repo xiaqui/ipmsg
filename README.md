@@ -31,6 +31,6 @@ JDK 17、Gradle 8.7、Android SDK 35を使用：
 
 applicationId/namespace: `com.xiaqui.ipmsg`、versionCode=3、versionName=0.3.0、minSdk=23、targetSdk=35。
 CIは登録済みの4署名Secretsを必須とし、APK署名の証明書ダイジェストをキーストアと照合します。
-GitHub Actions artifact `ipmsg-debug` に `ipmsg-debug.apk`、SHA256SUMS、provenance、署名／package検査結果を収録。
-配送の追跡と実機未検証事項は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md)、手順は [docs/TESTING.md](docs/TESTING.md) を参照。
-ipmsg専用のGoogle Drive固定配送先は未設定。他アプリのAPKは上書きしません。
+通常のGitHub Actions buildはread-onlyでテスト・Lint・署名検査まで行い、Actions Artifactは使用しません。署名APKを生成する手動Release workflowはmain限定で、draftへ直接添付後、再取得したAPKのSHA-256・サイズ・署名証明書を検証してからテスト用prereleaseとして公開します。
+配送の追跡と実機未検証事項は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md)、実機手順は [docs/TESTING.md](docs/TESTING.md)、Release手順は [docs/GITHUB_RELEASE_APK_DELIVERY_JA.md](docs/GITHUB_RELEASE_APK_DELIVERY_JA.md) を参照。
+既存のipmsg専用Google Drive固定ファイルは本Release実証では変更しません。他アプリのAPKも上書きしません。
