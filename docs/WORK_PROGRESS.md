@@ -1,7 +1,15 @@
 # Work進捗・再開手順
 
 更新: 2026-10-17 JST（最新CI記録は2026-10-17 UTC）
-状態: **LAN探索・オンライン判定の第2段階修正はPR #9でmainへマージ済み。コード、63件テスト、Lint、assemble、署名検査、独立レビューは完了。3端末での実機再検証と、この完成main SHAからのRelease APK生成・Drive配送は未実施。Windows/iOS版は開始していない。**
+状態: **LAN探索・オンライン判定の第2段階修正と復帰後再送の追補はPR #9・#11でmainへマージ済み。コード、63件テスト、Lint、assemble、署名検査、独立レビューは完了。3端末での実機再検証と、この完成main SHAからのRelease APK生成・Drive配送は未実施。Windows/iOS版は開始していない。**
+
+## 追加修正 PR #11（2026-10-17 JST）
+
+- [PR #11](https://github.com/xiaqui/ipmsg/pull/11) をマージ。完成main SHA: `2d032dec5221ae60846ad71abf65bc1f747ddc32`。第2段階修正の復帰後再送に対する追加対応。
+- NetworkのIPv4構成変更時、同一prefix内での実IPv4アドレス変更も検知して、該当する承認済みpeerの保留メッセージ再試行を最大10秒以内に短縮する。試行回数と指数バックオフの履歴は維持。
+- 署名検証済みHELLOで端末を発見した時も、当該peerの保留を再試行対象とする。他peerのバックオフは短縮しない。
+- CodexレビューのP2「prefixが同じ場合にアドレス変更を見逃す」を追加commit `d264b3cc2a30398b0b38bd429ad8225928fa197c` で修正、レビューthread返信・解決済み。
+- 追加修正最終CI: [39015098756](https://github.com/xiaqui/ipmsg/actions/runs/39015098756) 成功。実機検証とこの完成main SHA以降のAPK Release/Drive配送は未実施。
 
 ## Android LAN探索・オンライン判定 第2段階（2026-10-17 JST）
 
