@@ -1,16 +1,27 @@
 # Work進捗・再開手順
 
-更新: 2026-10-17 JST（最新CI記録は2026-10-16 UTC）
-状態: **Android実機LAN探索・オンライン判定の診断／局所修正をPR #4でmainへマージ済み。Windows版は開始していない。Artifact容量回復後のAPK生成・配送と実機検証が未完了。**
+更新: 2026-10-17 JST（最新CI記録は2026-10-17 UTC）
+状態: **Android実機LAN探索・オンライン判定修正はPR #4でmainへマージ済み。GitHub Releasesへの署名APK直接添付実証はPR #6/#7で完了。Google Drive固定ファイルは未変更、実機検証は未完了。Windows版は開始していない。**
 
 ## GitHub Releases直接添付の実証実験（2026-10-17 JST）
 
-- 目的: Actions Artifact容量制限を迂回し、同一buildジョブで署名APKをテスト用GitHub prereleaseへ直接添付する。
-- 変更: 既存のunit test／Lint／assemble／署名証明書／package／minSdk／SHA-256検査を維持し、`actions/upload-artifact` を使用しない。
-- 安全条件: PR／通常build workflowはread-only。Release専用workflowだけwrite権限を持ち、mainへの識別付きmerge pushまたはmain refのworkflow_dispatchだけでprereleaseを作成する。同じRelease jobでAPKを再取得し、サイズ、SHA-256、署名証明書を再照合する。
-- Google Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` は変更しない。Windows版開発も開始しない。
+- 結果: **成功**。Actions Artifactを使用せず、同一Release jobでテスト・Lint・ビルド・署名検査・draft添付・再取得検査・prerelease公開まで完結した。
+- 実装PR: [#6](https://github.com/xiaqui/ipmsg/pull/6)（main `06f81c5142426a5e2d75897355a2f29dee6cbc5a`）、draft一覧反映遅延の修正PR: [#7](https://github.com/xiaqui/ipmsg/pull/7)（完成main SHA `a0da626b412b0224acdc6ddf47368f0e1ed975d6`）。
+- 成功run: [38997429136](https://github.com/xiaqui/ipmsg/actions/runs/38997429136)、job `117292936850`。通常read-only build run [38997429134](https://github.com/xiaqui/ipmsg/actions/runs/38997429134) も成功。
+- テスト: 57件、失敗0、未実行0。Lint／assembleDebug／package=`com.xiaqui.ipmsg`／minSdk=23が成功。
+- 署名: v1/v2成功。証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`。Releaseから再取得したAPKにも同じ証明書を再照合。
+- Test prerelease: [ipmsg-test-a0da626b412b-run-38997429136-1](https://github.com/xiaqui/ipmsg/releases/tag/ipmsg-test-a0da626b412b-run-38997429136-1)
+  - Release ID: `415550940`
+  - APK asset ID: `649374811`
+  - source SHA: `a0da626b412b0224acdc6ddf47368f0e1ed975d6`
+  - APK: `ipmsg-debug.apk`、2,118,069 bytes
+  - SHA-256: `a1a4de64fbfb65bdebd618b407d928540f8b56c078da36cd62b6c3471dcdb342`
+  - Release APIのasset digestも同じ `sha256:a1a4de64fbfb65bdebd618b407d928540f8b56c078da36cd62b6c3471dcdb342`。
+- 安全境界: PR／通常build workflowは `contents: read`。Release専用workflowだけ `contents: write` で、main ref以外の手動実行を拒否。APKはdraftのまま再取得検査し、全検査成功後だけprereleaseとして公開。
+- 初回run [38996973493](https://github.com/xiaqui/ipmsg/actions/runs/38996973493) はdraft作成直後の一覧反映遅延で停止。Release ID `415548211`／APK asset ID `649359200` はdraftのまま非公開で、本番・配布物として扱わない。
+- 独立レビュー: PR #6でPR書込権限、main外dispatch、公開前検査、旧Artifact手順をP1/P2として修正。PR #7で有界リトライと完全tag一致を再レビューし、最終残存P1/P2なし。全inline thread解決済み。
+- Google Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` は変更していない。このテストReleaseのAPKをDrive配送済みとは扱わない。Windows版開発も開始していない。
 - 共通手順: [GITHUB_RELEASE_APK_DELIVERY_JA.md](GITHUB_RELEASE_APK_DELIVERY_JA.md)
-- 状態: 実装・PR・独立レビュー・mainマージ・テストRelease実行前。成功値は実行後に追記する。
 
 ## Android LAN探索・オンライン判定修正（2026-10-17 JST）
 
