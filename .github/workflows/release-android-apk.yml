@@ -1,4 +1,5 @@
 name: Release Signed Android APK
+# Manual release requested after LAN retry PR #11; preserve signature and verification gates.
 
 on:
   workflow_dispatch:
