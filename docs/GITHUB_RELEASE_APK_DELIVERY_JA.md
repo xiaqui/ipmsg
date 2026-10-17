@@ -7,9 +7,9 @@ GitHub Actions Artifactの容量制限に依存せず、同一ジョブでAndroi
 ## 適用条件
 
 - 既存のunit test、Lint、assemble、署名設定を変更せず前段で成功させる。
-- `permissions: contents: write` を明示し、Release作成時だけ `GITHUB_TOKEN` を `GH_TOKEN` として使う。
+- 通常のPR／build workflowは `permissions: contents: read` とする。Release専用workflowだけ `contents: write` を付与し、その同一job内でbuildからRelease検証まで完結させる。Release作成時は `GITHUB_TOKEN` を `GH_TOKEN` として使う。
 - Keystore、パスワード、tokenをRelease、ログ、provenanceへ書かない。
-- pull requestではReleaseを作らない。mainの明示的な手動実行、または一度限りの識別済みpushだけで作る。
+- pull requestではRelease workflowを動かさない。手動実行はmain refだけを許可し、またはmainへの一度限りの識別済みpushだけで作る。
 - APKのpackage、minSdk、署名証明書、SHA-256をRelease作成前に検査する。
 
 ## 共通フロー
@@ -19,7 +19,7 @@ GitHub Actions Artifactの容量制限に依存せず、同一ジョブでAndroi
 3. `aapt dump badging` でapplicationIdとminSdkを照合する。
 4. 配布名へコピーし、`SHA256SUMS` とsource SHA/run IDを含む `provenance.txt` を作る。
 5. `gh release create --prerelease` にAPKと検査記録を直接渡す。`actions/upload-artifact` は経由しない。
-6. 同じジョブで `gh release download` し、再取得APKのサイズとSHA-256をローカル生成物に一致させる。
+6. 同じジョブで `gh release download` し、再取得APKのサイズとSHA-256をローカル生成物に一致させ、`apksigner` で再取得APKの署名証明書もKeystoreと再照合する。
 7. Release ID、tag、asset ID、source SHA、run ID、APKサイズ、SHA-256を進捗書へ記録する。
 
 追跡鎖は `source SHA → Actions run ID → Release ID/tag → APK asset ID → 再取得APK → SHA-256/署名` とする。ReleaseのZIP/Source code archiveをAPKと誤認しない。
