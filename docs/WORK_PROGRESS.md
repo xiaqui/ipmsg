@@ -7,7 +7,7 @@
 
 - 目的: Actions Artifact容量制限を迂回し、同一buildジョブで署名APKをテスト用GitHub prereleaseへ直接添付する。
 - 変更: 既存のunit test／Lint／assemble／署名証明書／package／minSdk／SHA-256検査を維持し、`actions/upload-artifact` を使用しない。
-- 安全条件: pull requestではReleaseを作らない。mainへの識別付きmerge pushまたはworkflow_dispatchだけでprereleaseを作成し、同じジョブでAPKを再ダウンロードしてサイズとSHA-256を照合する。
+- 安全条件: PR／通常build workflowはread-only。Release専用workflowだけwrite権限を持ち、mainへの識別付きmerge pushまたはmain refのworkflow_dispatchだけでprereleaseを作成する。同じRelease jobでAPKを再取得し、サイズ、SHA-256、署名証明書を再照合する。
 - Google Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` は変更しない。Windows版開発も開始しない。
 - 共通手順: [GITHUB_RELEASE_APK_DELIVERY_JA.md](GITHUB_RELEASE_APK_DELIVERY_JA.md)
 - 状態: 実装・PR・独立レビュー・mainマージ・テストRelease実行前。成功値は実行後に追記する。
