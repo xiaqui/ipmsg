@@ -87,16 +87,20 @@ class LanEngine(private val context: Context, private val store: Store,
                 cm.getLinkProperties(network)?.let(::ipv4Prefixes)?.takeIf { it.isNotEmpty() }
                     ?.let { network to it }
             }.toMap()
-            lanPrefixes.clear();lanPrefixes.putAll(snapshot)
             val prefixes=snapshot.values.flatten().toSet()
-            when {
-                prefixes.isNotEmpty() -> expirePeersOutside(prefixes,reason)
-                LanNetworkPolicy.shouldConfirmOffline(prefixes,confirmEmpty) -> {
-                    store.offline();diagnostics.network("全LAN失効",reason+" 再照合済み")
-                }
-                else -> {
-                    diagnostics.network("全LAN再照合",reason+" IPv4未確定")
-                    scheduleNetworkReconcile(reason,true,generation)
+            networkReconcileGate.runIfCurrent(generation) {
+                if(running.get()) {
+                    lanPrefixes.clear();lanPrefixes.putAll(snapshot)
+                    when {
+                        prefixes.isNotEmpty() -> expirePeersOutside(prefixes,reason)
+                        LanNetworkPolicy.shouldConfirmOffline(prefixes,confirmEmpty) -> {
+                            store.offline();diagnostics.network("全LAN失効",reason+" 再照合済み")
+                        }
+                        else -> {
+                            diagnostics.network("全LAN再照合",reason+" IPv4未確定")
+                            scheduleNetworkReconcile(reason,true,generation)
+                        }
+                    }
                 }
             }
         },if(confirmEmpty) 1000 else 500,TimeUnit.MILLISECONDS) }
@@ -189,6 +193,10 @@ class LanEngine(private val context: Context, private val store: Store,
                                 }
                             }
                         } catch(_: java.net.SocketTimeoutException) {
+                        } catch(e: java.io.IOException) {
+                            // A receive/socket failure belongs to the listener lifecycle, not to
+                            // packet validation. Recreate the socket in the outer loop.
+                            throw e
                         } catch(e: Protocol.HelloValidationException) {
                             diagnostics.helloRejected(packetHost,e.stage)
                             diagnostics.udpReceived(packetHost,UdpReceiveResult.DROPPED,e.stage)
@@ -199,8 +207,11 @@ class LanEngine(private val context: Context, private val store: Store,
                         }
                     }
                 }
-            } catch(_: Exception) {
-                if(running.get()) SystemClock.sleep(1000)
+            } catch(e: Exception) {
+                if(running.get()) {
+                    diagnostics.network("UDP待受再作成",e.javaClass.simpleName)
+                    SystemClock.sleep(1000)
+                }
             } finally { udp = null; discoveryReady = false }
         }
     }
@@ -385,7 +396,7 @@ class LanEngine(private val context: Context, private val store: Store,
         return if(activeIsVpn) "あり（既定経路）" else "あり（非既定）"
     }
     fun close() {
-        running.set(false); udp?.close(); tcp?.close()
+        networkReconcileGate.next();running.set(false); udp?.close(); tcp?.close()
         clock.shutdownNow(); sender.shutdownNow(); workers.shutdownNow(); deadlines.shutdownNow()
         sockets.forEach { runCatching { it.close() } }; sockets.clear()
         if(callbackRegistered) runCatching { cm.unregisterNetworkCallback(callback) }
@@ -418,8 +429,13 @@ internal object LanRetryPolicy {
 }
 
 internal class NetworkReconcileGate {
-    private val generation=java.util.concurrent.atomic.AtomicLong()
-    fun next(): Long = generation.incrementAndGet()
-    fun isCurrent(value: Long): Boolean = generation.get() == value
+    private var generation=0L
+    @Synchronized fun next(): Long = ++generation
+    @Synchronized fun isCurrent(value: Long): Boolean = generation == value
+    @Synchronized fun runIfCurrent(value: Long,action: () -> Unit): Boolean {
+        if(generation != value) return false
+        action()
+        return true
+    }
 }
 
