@@ -55,7 +55,7 @@ class LanEngine(private val context: Context, private val store: Store,
             diagnostics.network("利用可能",network.toString()+" prefix="+current.joinToString(","))
             // A callback is not proof that all peers vanished. Keep their last-seen timestamps
             // and send an immediate hello; indiscriminate clearing caused online-state flicker.
-            store.retry(); scheduleNetworkReconcile("利用可能"); scheduleTick()
+            retryPeersOn(current); scheduleNetworkReconcile("利用可能"); scheduleTick()
         }
         override fun onLost(network: Network) {
             lanPrefixes.remove(network)
@@ -72,7 +72,7 @@ class LanEngine(private val context: Context, private val store: Store,
             if(previous != current) {
                 // Preserve attempt history, but let a recovered/new IP retry within ten seconds
                 // instead of waiting out a backoff accumulated on the old configuration.
-                store.retry()
+                retryPeersOn(current)
                 scheduleNetworkReconcile("構成変更")
             }
             scheduleTick()
@@ -136,6 +136,12 @@ class LanEngine(private val context: Context, private val store: Store,
             diagnostics.network("端末失効",reason+" LAN外="+expired.joinToString(",") { it.take(8) })
         }
     }
+    private fun retryPeersOn(prefixes: Set<String>) {
+        if(prefixes.isEmpty()) return
+        val ids=store.peers().filter { it.trusted &&
+            LanNetworkPolicy.hostOnPrefixes(it.host,prefixes) }.map { it.id }
+        store.retry(ids)
+    }
     private fun ipv4Prefixes(lp: android.net.LinkProperties): Set<String> =
         lp.linkAddresses.filter { it.address is Inet4Address && it.prefixLength in 1..32 }.map { link ->
             val ip = link.address.address.fold(0L) { n,b -> (n shl 8) or (b.toLong() and 255) }
@@ -189,6 +195,7 @@ class LanEngine(private val context: Context, private val store: Store,
                             } else {
                                 if(store.discover(hello,host,now)) {
                                     diagnostics.helloAccepted(hello.id,host)
+                                    store.retry(listOf(hello.id),now)
                                     diagnostics.udpReceived(host,UdpReceiveResult.PEER,
                                         "署名OK "+hello.id.take(8))
                                 } else {
