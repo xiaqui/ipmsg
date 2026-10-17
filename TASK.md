@@ -1,7 +1,7 @@
 # TASK.md — 家庭内 IP Messenger 仕様書・実装指示書
 
 更新日: 2026-10-17（JST）
-状態: **Android実機LAN探索・オンライン判定の診断／局所修正はPR #4でmainへマージ済み**（実装SHA `38e5c831c2ab03ab44fb1ab412f69b673a528c57`）。Windows版は開始していない。修正後APKの生成・配送と実機検証はArtifact容量回復待ち。最新のSHA／PR／run／artifact／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
+状態: **Android実機LAN探索・オンライン判定の診断／局所修正はPR #4でmainへマージ済み**（実装SHA `38e5c831c2ab03ab44fb1ab412f69b673a528c57`）。署名APKのGitHub Releases直接添付実証はPR #6/#7、main SHA `a0da626b412b0224acdc6ddf47368f0e1ed975d6`、run `38997429136` で成功。Google Drive固定ファイルは未変更、実機検証は未完了。Windows版は開始していない。最新のSHA／PR／run／Release／asset／Drive固定ID／検証結果は [docs/WORK_PROGRESS.md](docs/WORK_PROGRESS.md) を参照。Nearby Games連携は保留。既存 xiaqui/android 由来の ipmsg を使用。下記のテンプレート初期状態の記述は着手前の調査記録。
 
 ## 0. 現行最優先指示（2026-10-17）
 
@@ -9,7 +9,7 @@
 - Nearby Gamesの `docs/LAN_NSD_MULTICAST_DISCOVERY_FIX_2026-10-16_JA.md` と比較し、UDP送受信、署名検証、最終発見時刻、TCP接続、ACK、VPN、LAN prefixを可視化する。
 - 通常のConnectivity callback churnでは最終発見を消さず、全LAN消失または有効IPv4 prefix membership喪失時だけ無効化する。原因に応じた局所修正に限定する。
 - 自動テスト、独立レビュー、P1/P2修正、PRマージまで自走する。実機未検証は実機合格と書かない。
-- GitHub ActionsのArtifact容量制限によるupload失敗は開発停止条件にしない。完成SHAと容量回復後のAPK生成・Drive固定ID配送手順を `docs/WORK_PROGRESS.md` に残す。
+- GitHub Actions Artifact容量制限を回避するため、署名APKはmain限定のRelease workflowでdraftへ直接添付し、再取得したAPKのSHA-256・サイズ・署名証明書を検証後にprerelease公開する。Drive固定IDを更新する場合はRelease assetと再照合し、`docs/WORK_PROGRESS.md` に記録する。
 - **Windows版開発は開始しない。**
 
 ## 0-B. 以前の次期開発指示（2026-10-16・履歴）
