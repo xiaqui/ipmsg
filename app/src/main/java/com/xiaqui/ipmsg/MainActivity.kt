@@ -8,6 +8,9 @@ import android.content.pm.PackageManager
 import android.os.*
 import android.provider.Settings
 import android.graphics.Color
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.View
 import android.widget.*
 import java.text.DateFormat
@@ -111,8 +114,14 @@ class MainActivity : Activity() {
             peers.forEach { peer ->
                 if(peer.trusted) {
                     peersView.addView(CheckBox(this).apply {
-                        text=(if(peer.online(now)) "🟢 " else "⚫ ")+peer.name+
-                            (if(peer.online(now)) "" else "（オフライン・保留送信）")
+                        val online=peer.online(now)
+                        val label="● "+peer.name+
+                            (if(online) "" else "（オフライン・保留送信）")
+                        text=SpannableString(label).apply {
+                            setSpan(ForegroundColorSpan(
+                                if(online) Color.rgb(35,155,55) else Color.DKGRAY
+                            ),0,1,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        }
                         isChecked=peer.id in selected
                         setOnCheckedChangeListener { _,value ->
                             if(value) selected.add(peer.id) else selected.remove(peer.id);rendered="";renderPeers()
