@@ -47,11 +47,15 @@ class LanEngine(private val context: Context, private val store: Store,
     private val diagnostics = LanDiagnostics()
     private val selfId = Protocol.id(pair.public)
     private val lanPrefixes = java.util.concurrent.ConcurrentHashMap<Network,Set<String>>()
+    private val lanAddresses = java.util.concurrent.ConcurrentHashMap<Network,Set<String>>()
     private val networkReconcileGate = NetworkReconcileGate()
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            val current = cm.getLinkProperties(network)?.let(::ipv4Prefixes).orEmpty()
+            val properties = cm.getLinkProperties(network)
+            val current = properties?.let(::ipv4Prefixes).orEmpty()
+            val addresses = properties?.let(::ipv4Addresses).orEmpty()
             if(current.isNotEmpty()) lanPrefixes[network] = current
+            if(addresses.isNotEmpty()) lanAddresses[network] = addresses
             diagnostics.network("利用可能",network.toString()+" prefix="+current.joinToString(","))
             // A callback is not proof that all peers vanished. Keep their last-seen timestamps
             // and send an immediate hello; indiscriminate clearing caused online-state flicker.
@@ -59,17 +63,22 @@ class LanEngine(private val context: Context, private val store: Store,
         }
         override fun onLost(network: Network) {
             lanPrefixes.remove(network)
+            lanAddresses.remove(network)
             diagnostics.network("切断",network.toString()+" 残りIPv4 LAN="+lanPrefixes.size)
             scheduleNetworkReconcile("切断")
             scheduleTick()
         }
         override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
             val previous = lanPrefixes[network]
+            val previousAddresses = lanAddresses[network]
             val current = ipv4Prefixes(lp)
+            val currentAddresses = ipv4Addresses(lp)
             if(current.isEmpty()) lanPrefixes.remove(network) else lanPrefixes[network] = current
+            if(currentAddresses.isEmpty()) lanAddresses.remove(network) else lanAddresses[network] = currentAddresses
             diagnostics.network("構成変更",network.toString()+" prefix="+
                 if(current.isEmpty()) "IPv4なし" else current.joinToString(","))
-            if(previous != current) {
+            if(previous != current || previousAddresses != currentAddresses) {
+                // Detect a new local address even when its normalized subnet remains unchanged.
                 // Preserve attempt history, but let a recovered/new IP retry within ten seconds
                 // instead of waiting out a backoff accumulated on the old configuration.
                 retryPeersOn(current)
@@ -96,6 +105,11 @@ class LanEngine(private val context: Context, private val store: Store,
             networkReconcileGate.runIfCurrent(generation) {
                 if(running.get()) {
                     lanPrefixes.clear();lanPrefixes.putAll(snapshot)
+                    lanAddresses.clear()
+                    snapshot.keys.forEach { n ->
+                        cm.getLinkProperties(n)?.let(::ipv4Addresses)?.takeIf { it.isNotEmpty() }
+                            ?.let { lanAddresses[n] = it }
+                    }
                     when {
                         prefixes.isNotEmpty() -> expirePeersOutside(prefixes,reason)
                         LanNetworkPolicy.shouldConfirmOffline(prefixes,confirmEmpty) -> {
@@ -142,6 +156,9 @@ class LanEngine(private val context: Context, private val store: Store,
             LanNetworkPolicy.hostOnPrefixes(it.host,prefixes) }.map { it.id }
         store.retry(ids)
     }
+    private fun ipv4Addresses(lp: android.net.LinkProperties): Set<String> =
+        lp.linkAddresses.filter { it.address is Inet4Address && it.prefixLength in 1..32 }
+            .map { it.address.hostAddress + "/" + it.prefixLength }.toSet()
     private fun ipv4Prefixes(lp: android.net.LinkProperties): Set<String> =
         lp.linkAddresses.filter { it.address is Inet4Address && it.prefixLength in 1..32 }.map { link ->
             val ip = link.address.address.fold(0L) { n,b -> (n shl 8) or (b.toLong() and 255) }
