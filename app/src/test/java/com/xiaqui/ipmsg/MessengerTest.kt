@@ -263,6 +263,13 @@ class MessengerTest {
         assertFalse(LanNetworkPolicy.shouldConfirmOffline(emptySet(),false))
         assertTrue(LanNetworkPolicy.shouldConfirmOffline(emptySet(),true))
         assertFalse(LanNetworkPolicy.shouldConfirmOffline(setOf("192.168.1.0/24"),true))
+        val gate=NetworkReconcileGate()
+        val firstEmpty=gate.next()
+        assertTrue(gate.isCurrent(firstEmpty))
+        gate.next() // nonempty recovery invalidates its pending confirmation
+        val latestEmpty=gate.next()
+        assertFalse(gate.isCurrent(firstEmpty))
+        assertTrue(gate.isCurrent(latestEmpty))
         assertTrue(LanNetworkPolicy.hostOnPrefixes("192.168.1.25",setOf("192.168.1.0/24")))
         assertFalse(LanNetworkPolicy.hostOnPrefixes("192.168.2.25",setOf("192.168.1.0/24")))
         assertFalse(LanNetworkPolicy.hostOnPrefixes("not-an-ip",setOf("192.168.1.0/24")))

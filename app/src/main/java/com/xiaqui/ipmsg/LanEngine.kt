@@ -47,6 +47,7 @@ class LanEngine(private val context: Context, private val store: Store,
     private val diagnostics = LanDiagnostics()
     private val selfId = Protocol.id(pair.public)
     private val lanPrefixes = java.util.concurrent.ConcurrentHashMap<Network,Set<String>>()
+    private val networkReconcileGate = NetworkReconcileGate()
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             val current = cm.getLinkProperties(network)?.let(::ipv4Prefixes).orEmpty()
@@ -77,8 +78,11 @@ class LanEngine(private val context: Context, private val store: Store,
             diagnostics.network("再探索失敗",it.javaClass.simpleName)
         } } }
     }
-    private fun scheduleNetworkReconcile(reason: String, confirmEmpty: Boolean = false) {
-        runCatching { clock.schedule({
+    private fun scheduleNetworkReconcile(reason: String) =
+        scheduleNetworkReconcile(reason,false,networkReconcileGate.next())
+    private fun scheduleNetworkReconcile(reason: String, confirmEmpty: Boolean, generation: Long) {
+        runCatching { clock.schedule(reconcile@{
+            if(!networkReconcileGate.isCurrent(generation)) return@reconcile
             val snapshot=networks().mapNotNull { network ->
                 cm.getLinkProperties(network)?.let(::ipv4Prefixes)?.takeIf { it.isNotEmpty() }
                     ?.let { network to it }
@@ -92,7 +96,7 @@ class LanEngine(private val context: Context, private val store: Store,
                 }
                 else -> {
                     diagnostics.network("全LAN再照合",reason+" IPv4未確定")
-                    scheduleNetworkReconcile(reason,true)
+                    scheduleNetworkReconcile(reason,true,generation)
                 }
             }
         },if(confirmEmpty) 1000 else 500,TimeUnit.MILLISECONDS) }
@@ -411,5 +415,11 @@ internal object LanRetryPolicy {
             DeliveryCandidate(letter,peer,offline)
         }.take(limit.coerceAtLeast(0)).toList()
     }
+}
+
+internal class NetworkReconcileGate {
+    private val generation=java.util.concurrent.atomic.AtomicLong()
+    fun next(): Long = generation.incrementAndGet()
+    fun isCurrent(value: Long): Boolean = generation.get() == value
 }
 
