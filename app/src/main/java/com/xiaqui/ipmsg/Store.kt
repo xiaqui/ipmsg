@@ -130,6 +130,14 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
         writableDatabase.execSQL("UPDATE letters SET next=MIN(next,?) WHERE state='PENDING'",
             arrayOf(now+10000L))
     }
+    @Synchronized fun retry(peerIds: Collection<String>, now: Long = System.currentTimeMillis()) {
+        if(peerIds.isEmpty()) return
+        val values=peerIds.distinct()
+        val placeholders=values.joinToString(",") { "?" }
+        val args=mutableListOf<Any>(now+10000L).apply { addAll(values) }.toTypedArray()
+        writableDatabase.execSQL(
+            "UPDATE letters SET next=MIN(next,?) WHERE state='PENDING' AND peer IN ($placeholders)",args)
+    }
     @Synchronized fun letters(incoming: Boolean? = null): List<Letter> {
         val where = if(incoming == null) "" else " WHERE incoming=" + if(incoming) "1" else "0"
         return readableDatabase.rawQuery("SELECT id,peer,name,body,incoming,created,state,attempts,next FROM letters$where ORDER BY created DESC,rowid DESC",null).use { c ->

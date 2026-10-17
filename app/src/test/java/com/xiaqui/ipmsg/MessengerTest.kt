@@ -108,6 +108,19 @@ class MessengerTest {
         assertEquals(1,store.letters(false).single().attempts)
         assertEquals("PENDING",store.letters(false).single().state)
     }
+    @Test fun m3_scopedRetryDoesNotShortenAnotherLanPeersBackoff() {
+        trust(bob,"B");trust(carol,"C")
+        store.enqueue(listOf(b,c),a,"A","queued",100000)
+        store.pending(100000).forEach { store.attempted(it,100000) }
+        store.pending(110000).forEach { store.attempted(it,110000) }
+        assertTrue(store.pending(120000).isEmpty())
+        store.retry(listOf(b),110001)
+        assertEquals(listOf(b),store.pending(120001).map { it.peer })
+        assertEquals(2,store.letters(false).single { it.peer==b }.attempts)
+        assertEquals(2,store.letters(false).single { it.peer==c }.attempts)
+        assertTrue(store.pending(129999).none { it.peer==c })
+        assertTrue(store.pending(130000).any { it.peer==c })
+    }
     @Test fun m3_loopbackTextAndAuthenticatedAckUseRealTcpFrames() {
         trust(alice,"A")
         val id="00000000-0000-0000-0000-000000000002"
