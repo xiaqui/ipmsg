@@ -69,6 +69,9 @@ def main() -> int:
             root = QVBoxLayout(); root.addWidget(QLabel("IP Messenger — LAN内の手紙"))
             root.addWidget(QLabel(f"この端末の鍵指紋（64桁）: {self_id}"))
             self.peers = QListWidget(); self.peers.setSelectionMode(QListWidget.MultiSelection); root.addWidget(self.peers)
+            self.recipients = None  # None: selected peers, otherwise explicit destination IDs
+            self.destination = QLabel("宛先: 選択した端末"); root.addWidget(self.destination)
+            self.peers.itemSelectionChanged.connect(self.use_selected_peers)
             all_button = QPushButton("📢 全端末（自分を含む）"); all_button.setMinimumHeight(52)
             self_button = QPushButton("📝 自分宛て"); root.addWidget(all_button); root.addWidget(self_button)
             self.body = QTextEdit(); self.body.setPlaceholderText("本文（UTF-8で8192バイトまで）"); root.addWidget(self.body)
@@ -80,8 +83,8 @@ def main() -> int:
             save_name=QPushButton("端末名を保存");save_name.clicked.connect(self.save_name);root.addWidget(save_name)
             auto=QCheckBox("Windowsログイン時に起動（任意）"); auto.toggled.connect(set_autostart);root.addWidget(auto)
             shell=__import__("PySide6.QtWidgets",fromlist=["QWidget"]).QWidget();shell.setLayout(root);self.setCentralWidget(shell)
-            all_button.clicked.connect(lambda:self.send_to([p.peer_id for p in store.peers() if p.trusted]+[self_id]))
-            self_button.clicked.connect(lambda:self.send_to([self_id]));send.clicked.connect(self.send_selected)
+            all_button.clicked.connect(lambda:self.select_destination([p.peer_id for p in store.peers() if p.trusted]+[self_id], "全端末（自分を含む）"))
+            self_button.clicked.connect(lambda:self.select_destination([self_id], "自分宛て"));send.clicked.connect(self.send_selected)
             approve.clicked.connect(self.toggle_trust);inbox.clicked.connect(lambda:self.show_letters(True));outbox.clicked.connect(lambda:self.show_letters(False))
             self.refresh()
         def refresh(self):
@@ -90,11 +93,19 @@ def main() -> int:
                 state="ONLINE" if peer.online() else "OFFLINE"; trust="承認済" if peer.trusted else "未承認"
                 name="".join(ch if ch.isprintable() and ch not in "\r\n" else "�" for ch in peer.name)
                 item=QListWidgetItem(f"{name}  {state} / {trust}\n{peer.peer_id}");item.setData(Qt.UserRole,peer.peer_id);self.peers.addItem(item)
+        def use_selected_peers(self):
+            self.recipients = None
+            self.destination.setText("宛先: 選択した端末")
+        def select_destination(self, ids, title):
+            self.recipients = ids
+            self.destination.setText(f"宛先: {title}")
         def send_to(self, ids):
             text=self.body.toPlainText()
-            try: store.enqueue(ids,self_id,"Windows",text);self.body.clear();self.refresh()
+            try: store.enqueue(ids,self_id,node.name,text);self.body.clear();self.refresh()
             except ValueError as e: QMessageBox.warning(self,"送信できません",str(e))
-        def send_selected(self): self.send_to([i.data(Qt.UserRole) for i in self.peers.selectedItems()])
+        def send_selected(self):
+            ids = self.recipients if self.recipients is not None else [i.data(Qt.UserRole) for i in self.peers.selectedItems()]
+            self.send_to(ids)
         def toggle_trust(self):
             items=self.peers.selectedItems()
             if len(items)!=1: return
@@ -117,7 +128,10 @@ def main() -> int:
     window=Window(); tray=QSystemTrayIcon(window);tray.setToolTip("IP Messenger")
     tray.setIcon(window.style().standardIcon(QStyle.SP_MessageBoxInformation))
     menu=__import__("PySide6.QtWidgets",fromlist=["QMenu"]).QMenu();show=QAction("開く");quit_action=QAction("終了")
-    show.triggered.connect(window.show);quit_action.triggered.connect(app.quit);menu.addAction(show);menu.addAction(quit_action);tray.setContextMenu(menu);tray.show()
+    def reveal_window():
+        window.showNormal(); window.raise_(); window.activateWindow()
+    show.triggered.connect(reveal_window);quit_action.triggered.connect(app.quit);menu.addAction(show);menu.addAction(quit_action);tray.setContextMenu(menu);tray.show()
+    tray.activated.connect(lambda reason: reveal_window() if reason == QSystemTrayIcon.Trigger else None)
     bridge.changed.connect(window.refresh)
     bridge.arrived.connect(lambda n,b:tray.showMessage(f"{n} から手紙",b[:120]))
     node=LanNode(store,private,str(settings.value("deviceName",os.environ.get("COMPUTERNAME","Windows")))[:40],
@@ -125,7 +139,7 @@ def main() -> int:
     def activate_existing():
         connection=instance_server.nextPendingConnection()
         if connection: connection.waitForReadyRead(100); connection.deleteLater()
-        window.show();window.raise_();window.activateWindow()
+        reveal_window()
     instance_server.newConnection.connect(activate_existing)
     try: node.start()
     except OSError as error:
