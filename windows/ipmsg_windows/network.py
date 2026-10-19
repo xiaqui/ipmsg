@@ -44,27 +44,35 @@ def _private_physical_interfaces() -> set[str]:
         return set(names)
 
 
-def _lan_networks() -> list[ipaddress.IPv4Network]:
+def _lan_interfaces() -> list[tuple[str, ipaddress.IPv4Network]]:
     allowed = _private_physical_interfaces()
     result = []
     for name, entries in psutil.net_if_addrs().items():
         if name not in allowed: continue
         for item in entries:
             if item.family == socket.AF_INET and item.netmask and not item.address.startswith(("127.", "169.254.")):
-                try: result.append(ipaddress.IPv4Network(f"{item.address}/{item.netmask}", strict=False))
+                try: result.append((item.address,ipaddress.IPv4Network(f"{item.address}/{item.netmask}", strict=False)))
                 except ValueError: pass
     return result
 
 
 def lan_broadcasts() -> set[str]:
-    return {str(network.broadcast_address) for network in _lan_networks()}
+    return {target for _source,network in _lan_interfaces()
+            for target in ("255.255.255.255",str(network.broadcast_address))}
 
 
 def host_on_lan(host: str) -> bool:
     try: target = ipaddress.ip_address(host)
     except ValueError: return False
     return any(target in network and target not in (network.network_address, network.broadcast_address)
-               for network in _lan_networks())
+               for _source,network in _lan_interfaces())
+
+
+def _expire_connection(conn: socket.socket) -> None:
+    try: conn.shutdown(socket.SHUT_RDWR)
+    except OSError: pass
+    try: conn.close()
+    except OSError: pass
 
 
 class LanNode:
@@ -119,12 +127,17 @@ class LanNode:
 
     def _announce(self) -> None:
         packet = protocol.make_hello(self.name, self.private)
-        targets = lan_broadcasts() | {p.host for p in self.store.peers() if p.trusted and host_on_lan(p.host)}
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            for host in targets:
-                try: sock.sendto(packet, (host, protocol.PORT))
-                except OSError: pass
+        peers = [p for p in self.store.peers() if p.trusted]
+        # Bind each send socket to its allowed Private physical NIC. This retains limited
+        # broadcast compatibility without allowing Windows to route it through VPN/public NICs.
+        for source,network in _lan_interfaces():
+            targets = {"255.255.255.255",str(network.broadcast_address)} | {
+                p.host for p in peers if ipaddress.ip_address(p.host) in network}
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                try:
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1);sock.bind((source,0))
+                    for host in targets: sock.sendto(packet, (host, protocol.PORT))
+                except (OSError,ValueError): pass
 
     def _tcp_loop(self) -> None:
         server = self.tcp
@@ -137,13 +150,15 @@ class LanNode:
                     admitted = approved and host not in self.active_hosts and self.receive_slots.acquire(False)
                     if admitted: self.active_hosts.add(host)
                 if not admitted: conn.close(); continue
-                self.receivers.submit(self._receive_guarded, conn, host)
+                deadline = threading.Timer(3.0, _expire_connection, (conn,));deadline.daemon=True;deadline.start()
+                self.receivers.submit(self._receive_guarded, conn, host, deadline)
             except socket.timeout: pass
             except OSError: break
 
-    def _receive_guarded(self, conn: socket.socket, host: str) -> None:
+    def _receive_guarded(self, conn: socket.socket, host: str, deadline: threading.Timer) -> None:
         try: self._receive(conn, host)
         finally:
+            deadline.cancel()
             with self.active_lock: self.active_hosts.discard(host)
             self.receive_slots.release()
 
