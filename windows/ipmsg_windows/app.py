@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from pathlib import Path
 
 from . import __version__
 
@@ -94,4 +93,5 @@ def main() -> int:
 
 
 if __name__ == "__main__": raise SystemExit(main())
+
 
