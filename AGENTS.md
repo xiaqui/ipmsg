@@ -49,3 +49,10 @@
 - 新規文書: `docs/ANDROID_DEVICE_ACCEPTANCE_JA.md`、`docs/SHARED_PROTOCOL_SPEC_JA.md`、`docs/WINDOWS_CLIENT_SPEC_JA.md`、`docs/FILE_TRANSFER_SPEC_JA.md`、`docs/MULTIPLATFORM_ROADMAP_JA.md`、`docs/WINDOWS_BUILD_DELIVERY_JA.md`、`docs/IOS_FUTURE_PLAN_JA.md`。正本のAndroidコードにない事実を推測してプロトコル仕様に追加しない。
 - Python+PySide6はWindowsクライアント候補。選定前に他方式やWindows秘密鍵保護/起動時常駐/配布を比較する。
 - M4設計のみ実行可能。M5以降のWindows実装はAndroid実機双方向通信成功とユーザー別途明示指示が必要。iOSはさらに後。
+
+## CI実行節約ルール（2026-10-20、最新指示）
+- 開発中はローカルテストを優先し、関連する修正をまとめてpushする。細かなコミットごとにActionsを乱発しない。
+- PR内の旧CIはconcurrency/cancel-in-progressで自動キャンセルし、最新コミットのCIのみを最終判定に使う。
+- Android専用変更はAndroid CI、Windows専用変更はWindows CIを実行し、共有プロトコル・相互互換テスト変更時は両方を実行する。最終マージ前には必要な全CIの成功を確認する。
+- Release配布workflowはmainのみ。PRの試験ビルドを配布物として扱わず、Actions Artifactを使わない。
+- 歴史的な「Windows実装禁止」規定は、ユーザー承認済みM5には適用しない。TASK.md最新指示が優先する。
