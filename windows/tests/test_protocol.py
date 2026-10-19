@@ -1,4 +1,5 @@
 import json
+import os
 import socket
 import sys
 import unittest
@@ -51,6 +52,18 @@ class ProtocolTest(unittest.TestCase):
         self.assertTrue(protocol.valid_text("あ"*2730))
         self.assertFalse(protocol.valid_text("あ"*2731))
         self.assertFalse(protocol.valid_text(" \n"))
+
+    @unittest.skipUnless(os.environ.get("ANDROID_VECTOR_PATH"), "Android-generated vector is produced in CI")
+    def test_android_generated_text_ack_and_hello(self):
+        vector=json.loads(Path(os.environ["ANDROID_VECTOR_PATH"]).read_text(encoding="utf-8"))
+        sender=serialization.load_pem_private_key(vector["senderPrivateTestOnly"].encode(),None)
+        recipient=serialization.load_pem_private_key(vector["recipientPrivateTestOnly"].encode(),None)
+        self.assertEqual(vector["senderId"],protocol.read_hello(vector["hello"].encode(),vector["now"]).peer_id)
+        text=protocol.open_frame(vector["textFrame"].encode(),recipient,sender.public_key())
+        self.assertEqual(("TEXT",vector["messageId"],"Android生成 → Windows検証"),
+                         (text["type"],text["id"],text["body"]))
+        ack=protocol.open_frame(vector["ackFrame"].encode(),sender,recipient.public_key())
+        self.assertEqual(("ACK",vector["messageId"]),(ack["type"],ack["id"]))
 
 
 if __name__ == "__main__": unittest.main()

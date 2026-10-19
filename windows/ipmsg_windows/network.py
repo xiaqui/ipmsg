@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -15,26 +17,54 @@ from . import protocol
 from .store import Peer, Store
 
 
-def lan_broadcasts() -> set[str]:
-    result = {"255.255.255.255"}
-    for entries in psutil.net_if_addrs().values():
+_profile_lock = threading.Lock()
+_profile_cache: tuple[float, set[str]] = (0.0, set())
+
+
+def _private_physical_interfaces() -> set[str]:
+    """Fail closed: only Windows Private-profile, up, physical Ethernet/Wi-Fi NICs."""
+    global _profile_cache
+    with _profile_lock:
+        if time.monotonic() - _profile_cache[0] < 5:
+            return set(_profile_cache[1])
+        if os.name != "nt":
+            _profile_cache = (time.monotonic(), set())
+            return set()
+        command = ("Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Private'} | "
+          "ForEach-Object {$a=Get-NetAdapter -InterfaceIndex $_.InterfaceIndex -ErrorAction SilentlyContinue; "
+          "if($a.Status -eq 'Up' -and $a.HardwareInterface -and "
+          "($a.MediaType -eq '802.3' -or $a.MediaType -eq 'Native 802.11')) {$_.InterfaceAlias}}")
+        try:
+            run = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
+                                 capture_output=True, text=True, timeout=3, check=True)
+            names = {line.strip() for line in run.stdout.splitlines() if line.strip()}
+        except (OSError, subprocess.SubprocessError):
+            names = set()
+        _profile_cache = (time.monotonic(), names)
+        return set(names)
+
+
+def _lan_networks() -> list[ipaddress.IPv4Network]:
+    allowed = _private_physical_interfaces()
+    result = []
+    for name, entries in psutil.net_if_addrs().items():
+        if name not in allowed: continue
         for item in entries:
-            if item.family == socket.AF_INET and item.netmask and not item.address.startswith("127."):
-                try: result.add(str(ipaddress.IPv4Network(f"{item.address}/{item.netmask}", strict=False).broadcast_address))
+            if item.family == socket.AF_INET and item.netmask and not item.address.startswith(("127.", "169.254.")):
+                try: result.append(ipaddress.IPv4Network(f"{item.address}/{item.netmask}", strict=False))
                 except ValueError: pass
     return result
+
+
+def lan_broadcasts() -> set[str]:
+    return {str(network.broadcast_address) for network in _lan_networks()}
 
 
 def host_on_lan(host: str) -> bool:
     try: target = ipaddress.ip_address(host)
     except ValueError: return False
-    for entries in psutil.net_if_addrs().values():
-        for item in entries:
-            if item.family == socket.AF_INET and item.netmask:
-                try:
-                    if target in ipaddress.ip_network(f"{item.address}/{item.netmask}", strict=False): return True
-                except ValueError: pass
-    return False
+    return any(target in network and target not in (network.network_address, network.broadcast_address)
+               for network in _lan_networks())
 
 
 class LanNode:
@@ -46,11 +76,22 @@ class LanNode:
         self.on_change, self.on_letter = on_change, on_letter
         self.stop_event = threading.Event()
         self.pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ipmsg")
+        self.receivers = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ipmsg-rx")
+        self.receive_slots = threading.BoundedSemaphore(8)
+        self.active_hosts: set[str] = set()
+        self.active_lock = threading.Lock()
         self.udp: socket.socket | None = None
         self.tcp: socket.socket | None = None
 
     def start(self) -> None:
         self.stop_event.clear()
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        udp.bind(("", protocol.PORT)); udp.settimeout(1); self.udp = udp
+        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        tcp.bind(("", protocol.PORT)); tcp.listen(8); tcp.settimeout(1); self.tcp = tcp
         self.pool.submit(self._udp_loop); self.pool.submit(self._tcp_loop); self.pool.submit(self._clock_loop)
 
     def stop(self) -> None:
@@ -60,15 +101,15 @@ class LanNode:
                 try: sock.close()
                 except OSError: pass
         self.pool.shutdown(wait=False, cancel_futures=True)
+        self.receivers.shutdown(wait=False, cancel_futures=True)
 
     def _udp_loop(self) -> None:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        sock.bind(("", protocol.PORT)); sock.settimeout(1); self.udp = sock
+        sock = self.udp
+        if sock is None: return
         while not self.stop_event.is_set():
             try:
                 data, source = sock.recvfrom(4097)
+                if not host_on_lan(source[0]): continue
                 hello = protocol.read_hello(data)
                 if hello.peer_id != self.self_id:
                     self.store.discover(hello.peer_id, hello.name, hello.public_key, source[0], int(time.time()*1000))
@@ -86,15 +127,25 @@ class LanNode:
                 except OSError: pass
 
     def _tcp_loop(self) -> None:
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind(("", protocol.PORT)); server.listen(8); server.settimeout(1); self.tcp = server
+        server = self.tcp
+        if server is None: return
         while not self.stop_event.is_set():
             try:
-                conn, addr = server.accept(); conn.settimeout(5)
-                self.pool.submit(self._receive, conn, addr[0])
+                conn, addr = server.accept(); host = addr[0]; conn.settimeout(3)
+                approved = host_on_lan(host) and any(p.trusted and p.host == host for p in self.store.peers())
+                with self.active_lock:
+                    admitted = approved and host not in self.active_hosts and self.receive_slots.acquire(False)
+                    if admitted: self.active_hosts.add(host)
+                if not admitted: conn.close(); continue
+                self.receivers.submit(self._receive_guarded, conn, host)
             except socket.timeout: pass
             except OSError: break
+
+    def _receive_guarded(self, conn: socket.socket, host: str) -> None:
+        try: self._receive(conn, host)
+        finally:
+            with self.active_lock: self.active_hosts.discard(host)
+            self.receive_slots.release()
 
     def _receive(self, conn: socket.socket, host: str) -> None:
         with conn:
@@ -116,7 +167,6 @@ class LanNode:
             except (OSError, EOFError, ValueError, KeyError): return
 
     def _send(self, letter, peer: Peer) -> None:
-        now = int(time.time()*1000)
         try:
             if not host_on_lan(peer.host): raise OSError("peer is outside active LAN")
             with socket.create_connection((peer.host, protocol.PORT), timeout=3) as conn:
@@ -130,7 +180,7 @@ class LanNode:
                     raise ValueError("invalid ACK")
             self.store.delivered(letter.message_id, peer.peer_id)
         except (OSError, EOFError, ValueError, KeyError):
-            self.store.attempted(letter, now)
+            pass
         self.on_change()
 
     def _clock_loop(self) -> None:
@@ -139,10 +189,7 @@ class LanNode:
             if time.monotonic() >= next_hello:
                 self._announce(); next_hello = time.monotonic() + 10
             now = int(time.time()*1000); peers = {p.peer_id:p for p in self.store.peers()}
-            # One due message per peer/cycle bounds offline connection pressure.
-            selected: dict[str, object] = {}
-            for letter in self.store.pending(now): selected.setdefault(letter.peer_id, letter)
-            for peer_id, letter in list(selected.items())[:16]:
-                peer = peers.get(peer_id)
+            for letter in self.store.claim_pending(now,16):
+                peer = peers.get(letter.peer_id)
                 if peer: self.pool.submit(self._send, letter, peer)
 

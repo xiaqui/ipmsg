@@ -41,5 +41,11 @@ class StoreTest(unittest.TestCase):
         second=load_or_create(path,allow_unprotected_test_storage=True)
         self.assertEqual(fingerprint(first.public_key()),fingerprint(second.public_key()))
 
+    def test_claim_is_atomic_and_leases_once_per_peer(self):
+        self.store.enqueue(["b"*64],"a"*64,"Windows","claimed",100_000)
+        claimed=self.store.claim_pending(100_000)
+        self.assertEqual(1,len(claimed));self.assertEqual([],self.store.claim_pending(100_001))
+        self.assertEqual(1,self.store.letters(False)[0].attempts)
+
 if __name__ == "__main__": unittest.main()
 

@@ -132,6 +132,24 @@ class Store:
                        r["created"], r["state"], r["attempts"], r["next"]) for r in rows]
 
     @synchronized
+    def claim_pending(self, now: int, limit: int = 16) -> list[Letter]:
+        """Atomically leases at most one due letter per peer before network submission."""
+        due = self.pending(now)
+        selected: dict[str, Letter] = {}
+        for letter in due:
+            selected.setdefault(letter.peer_id, letter)
+        claimed = list(selected.values())[:max(0, limit)]
+        with self.db:
+            for letter in claimed:
+                delay = min(10_000 * (1 << min(letter.attempts, 5)), 300_000)
+                changed = self.db.execute("UPDATE letters SET attempts=attempts+1,next=? "
+                    "WHERE id=? AND peer=? AND incoming=0 AND state='PENDING' AND next<=?",
+                    (now + delay, letter.message_id, letter.peer_id, now)).rowcount
+                if changed != 1:
+                    raise RuntimeError("pending claim lost")
+        return claimed
+
+    @synchronized
     def attempted(self, letter: Letter, now: int) -> None:
         delay = min(10_000 * (1 << min(letter.attempts, 5)), 300_000)
         with self.db: self.db.execute("UPDATE letters SET attempts=attempts+1,next=? "

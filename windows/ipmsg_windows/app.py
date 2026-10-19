@@ -1,3 +1,4 @@
+"""Simple letter-oriented PySide6 UI, tray receiver and optional user autostart."""
 from __future__ import annotations
 
 import argparse
@@ -33,6 +34,7 @@ def main() -> int:
     if os.name != "nt":
         print("The GUI is supported on Windows 11 only.", file=sys.stderr); return 2
     from PySide6.QtCore import QObject, QSettings, Qt, Signal
+    from PySide6.QtNetwork import QLocalServer, QLocalSocket
     from PySide6.QtGui import QAction
     from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QHBoxLayout, QLabel,
         QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QStyle,
@@ -43,6 +45,14 @@ def main() -> int:
     from .store import Store
 
     app = QApplication(sys.argv); app.setQuitOnLastWindowClosed(False)
+    instance_name = "Xiaqui-IPMessenger-v1"
+    probe = QLocalSocket(); probe.connectToServer(instance_name)
+    if probe.waitForConnected(250):
+        probe.write(b"show"); probe.waitForBytesWritten(250); return 0
+    instance_server = QLocalServer(app)
+    if not instance_server.listen(instance_name):
+        QMessageBox.critical(None,"IP Messenger","別のインスタンスが動作中か、二重起動防止用のローカル受口を作成できません")
+        return 3
     data = default_data_dir(); private = load_or_create(data / "identity.dpapi")
     store = Store(data / "messages.sqlite3"); self_id = fingerprint(private.public_key())
     settings = QSettings("Xiaqui", "IPMessenger")
@@ -111,9 +121,17 @@ def main() -> int:
     bridge.arrived.connect(lambda n,b:tray.showMessage(f"{n} から手紙",b[:120]))
     node=LanNode(store,private,str(settings.value("deviceName",os.environ.get("COMPUTERNAME","Windows")))[:40],
                  bridge.changed.emit,bridge.arrived.emit)
-    node.start();app.aboutToQuit.connect(node.stop);window.show();return app.exec()
+    def activate_existing():
+        connection=instance_server.nextPendingConnection()
+        if connection: connection.waitForReadyRead(100); connection.deleteLater()
+        window.show();window.raise_();window.activateWindow()
+    instance_server.newConnection.connect(activate_existing)
+    try: node.start()
+    except OSError as error:
+        QMessageBox.critical(window,"LAN受信を開始できません",f"UDP/TCP 42124を確保できません。\n{error}")
+        node.stop();return 4
+    app.aboutToQuit.connect(node.stop);window.show();return app.exec()
 
 
 if __name__ == "__main__": raise SystemExit(main())
-
 
