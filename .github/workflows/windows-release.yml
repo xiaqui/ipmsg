@@ -1,0 +1,67 @@
+name: Windows M5 Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'windows/**'
+      - 'app/src/test/**/WindowsInteropTest.kt'
+      - 'app/src/test/resources/protocol-v1-windows-vector.json'
+      - '.github/workflows/windows-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-m5-release-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  build-test-release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: 'pip', cache-dependency-path: windows/pyproject.toml }
+      - run: python -m pip install --disable-pip-version-check ./windows pyinstaller==6.11.1 ruff==0.9.6
+      - run: python -m unittest discover -s windows/tests -v
+      - run: ruff check windows/ipmsg_windows windows/tests windows/tools
+      - working-directory: windows
+        run: pyinstaller --clean --noconfirm ipmsg-windows.spec
+      - run: windows/dist/ipmsg-windows.exe --version
+      - name: Package and record provenance
+        id: package
+        shell: pwsh
+        run: |
+          $short = "${{ github.sha }}".Substring(0, 12)
+          $zip = "ipmsg-windows-$short.zip"
+          Compress-Archive -Path windows/dist/ipmsg-windows.exe,windows/README_JA.md -DestinationPath $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          $size = (Get-Item $zip).Length
+          "$hash  $zip" | Set-Content -Encoding ascii SHA256SUMS.txt
+          @("source_sha=${{ github.sha }}","run_id=${{ github.run_id }}","run_attempt=${{ github.run_attempt }}","asset=$zip","size_bytes=$size","sha256=$hash","authenticode=unsigned-test-release") | Set-Content -Encoding ascii PROVENANCE.txt
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "tag=m5-windows-$short" >> $env:GITHUB_OUTPUT
+      - name: Create draft and upload directly to GitHub Release
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.package.outputs.tag }}"
+          if (-not (gh release view $tag 2>$null)) {
+            gh release create $tag --target "${{ github.sha }}" --draft --prerelease --title "M5 Windows $tag" --notes "Windows 11 M5 test release. Android protocol v1 compatible. VAIO↔Android real-device verification remains pending. Authenticode unsigned; verify SHA256SUMS.txt."
+          }
+          gh release upload $tag "${{ steps.package.outputs.zip }}" SHA256SUMS.txt PROVENANCE.txt --clobber
+      - name: Re-download and verify before publishing
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path verify | Out-Null
+          gh release download "${{ steps.package.outputs.tag }}" --dir verify --pattern "ipmsg-windows-*.zip"
+          $source = Get-FileHash "${{ steps.package.outputs.zip }}" -Algorithm SHA256
+          $download = Get-FileHash "verify/${{ steps.package.outputs.zip }}" -Algorithm SHA256
+          if ($source.Hash -ne $download.Hash) { throw "Release re-download SHA mismatch" }
+          if ((Get-Item "${{ steps.package.outputs.zip }}").Length -ne (Get-Item "verify/${{ steps.package.outputs.zip }}").Length) { throw "Release re-download size mismatch" }
+          gh release edit "${{ steps.package.outputs.tag }}" --draft=false --prerelease
+
