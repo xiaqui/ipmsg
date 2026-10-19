@@ -1,0 +1,58 @@
+name: Windows M5 CI
+
+on:
+  pull_request:
+    paths:
+      - 'windows/**'
+      - 'app/src/test/**/WindowsInteropTest.kt'
+      - 'app/src/test/resources/protocol-v1-windows-vector.json'
+      - '.github/workflows/windows-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-m5-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: 'pip', cache-dependency-path: windows/pyproject.toml }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.7' }
+      - run: python -m pip install --disable-pip-version-check ./windows ruff==0.9.6
+      - name: Android accepts Windows protocol vector
+        run: gradle testDebugUnitTest --tests com.xiaqui.ipmsg.WindowsInteropTest --no-daemon
+      - name: Windows accepts Android-generated protocol vectors
+        env:
+          ANDROID_VECTOR_PATH: build/interop/android-generated.json
+        run: python -m unittest discover -s windows/tests -v
+      - run: ruff check windows/ipmsg_windows windows/tests windows/tools
+
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: 'pip', cache-dependency-path: windows/pyproject.toml }
+      - run: python -m pip install --disable-pip-version-check ./windows pyinstaller==6.11.1
+      - run: python -m unittest discover -s windows/tests -v
+      - working-directory: windows
+        run: pyinstaller --clean --noconfirm ipmsg-windows.spec
+      - run: windows/dist/ipmsg-windows.exe --version
+      - name: Verify package locally (no Actions Artifact)
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash windows/dist/ipmsg-windows.exe -Algorithm SHA256).Hash.ToLower()
+          $size = (Get-Item windows/dist/ipmsg-windows.exe).Length
+          if ($size -lt 1000000) { throw "Unexpectedly small executable: $size" }
+          Write-Host "exe_sha256=$hash exe_size=$size"
+
+

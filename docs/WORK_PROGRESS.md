@@ -1,3 +1,16 @@
+# M5 Windows版 進捗（2026-10-19 UTC）
+
+- 状態: 実装ブランチ作成中。PR、独立レビュー、CI、mainマージ、Release配送は未完了。
+- 基準main: `55d1d353535211a60c93f0aecb9f77cc4746221c`。
+- 選定: Python 3.12 + PySide6。通信/保存/暗号コアをGUIから分離し、Windows秘密鍵はユーザー単位DPAPIで保護する。
+- 実装: Android v1互換の署名UDP探索、RSA鍵指紋、双方承認、RSA-OAEP(SHA-1/MGF1)+AES-256-GCM、署名TCP、保存後ACK、SQLite履歴、重複排除、10秒〜5分の指数バックオフ、既知IP再送、全端末（自分含む）/自分宛て/個別/複数、トレイ通知、任意自動起動。
+- ローカル確認: Python unittest 7件成功、compileall成功、diff check成功。手元の旧チェックアウトにはGradle Wrapperがなく、Android共有ベクトル試験とWindows EXEビルドはCI待ち。
+- 配送: `actions/upload-artifact` は新規workflowに不使用。同一Windows jobで試験→PyInstaller→draft Release直添付→再取得SHA-256/サイズ一致→prerelease公開する。
+- 未検証: Windows 11実機起動、VAIO↔AndroidのUDP/TCP/ACK、Firewall案内、SmartScreen、ログイン自動起動。M6ファイル転送、M7重要便、iOSは対象外。
+- 再開点: PR CIを通し、独立レビューのP1/P2を修正後にmainへマージ。main runのsource SHA/run ID/Release tag・ID/asset ID/サイズ/SHA-256を本書に追記する。
+
+---
+
 # Work進捗・再開手順
 
 更新: 2026-10-17 JST（最新CI記録は2026-10-17 UTC）
