@@ -10,8 +10,7 @@ import java.security.KeyFactory
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.spec.PKCS8EncodedKeySpec
-import java.security.spec.RSAPrivateCrtKeySpec
-import java.security.spec.RSAPublicKeySpec
+import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
 
 @RunWith(RobolectricTestRunner::class)
@@ -21,10 +20,10 @@ class WindowsInteropTest {
         PKCS8EncodedKeySpec(Base64.getDecoder().decode(pem.replace("-----BEGIN PRIVATE KEY-----","")
             .replace("-----END PRIVATE KEY-----","").replace(Regex("\\s"),""))))
 
-    private fun pair(pem: String): KeyPair {
+    private fun pair(pem: String, publicEncoded: String): KeyPair {
         val private=privateKey(pem)
-        val spec=KeyFactory.getInstance("RSA").getKeySpec(private,RSAPrivateCrtKeySpec::class.java)
-        val public=KeyFactory.getInstance("RSA").generatePublic(RSAPublicKeySpec(spec.modulus,spec.publicExponent))
+        val public=KeyFactory.getInstance("RSA").generatePublic(
+            X509EncodedKeySpec(Base64.getDecoder().decode(publicEncoded)))
         return KeyPair(public,private)
     }
 
@@ -38,8 +37,8 @@ class WindowsInteropTest {
         val vector=JSONObject(text)
         val hello=Protocol.readHello(vector.getString("hello").toByteArray(),vector.getLong("now"))
         assertEquals(vector.getString("senderId"),hello.id)
-        val sender=pair(vector.getString("senderPrivateTestOnly"))
-        val recipient=pair(vector.getString("recipientPrivateTestOnly"))
+        val sender=pair(vector.getString("senderPrivateTestOnly"),vector.getString("senderPublicTestOnly"))
+        val recipient=pair(vector.getString("recipientPrivateTestOnly"),vector.getString("recipientPublicTestOnly"))
         val body=Protocol.open(vector.getString("textFrame").toByteArray(),recipient,sender.public)
         assertEquals("TEXT",body.getString("type"));assertEquals(vector.getString("messageId"),body.getString("id"))
         assertEquals("Android ↔ Windows 日本語",body.getString("body"))

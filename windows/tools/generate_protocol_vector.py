@@ -15,6 +15,8 @@ recipient=rsa.generate_private_key(public_exponent=65537,key_size=2048)
 now=1_800_000_000_000;message="00000000-0000-0000-0000-000000000005"
 fixture={"warning":"TEST KEYS ONLY - NEVER USE IN PRODUCTION","now":now,"messageId":message,
  "senderId":protocol.fingerprint(sender.public_key()),"recipientId":protocol.fingerprint(recipient.public_key()),
+ "senderPublicTestOnly":protocol._b64(protocol.public_der(sender.public_key())),
+ "recipientPublicTestOnly":protocol._b64(protocol.public_der(recipient.public_key())),
  "senderPrivateTestOnly":pem(sender),"recipientPrivateTestOnly":pem(recipient),
  "hello":protocol.make_hello("Windows テスト",sender,now).decode(),
  "textFrame":protocol.seal({"type":"TEXT","id":message,"body":"Android ↔ Windows 日本語"},sender,
