@@ -36,7 +36,8 @@ def _private_physical_interfaces() -> set[str]:
           "($a.MediaType -eq '802.3' -or $a.MediaType -eq 'Native 802.11')) {$_.InterfaceAlias}}")
         try:
             run = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command],
-                                 capture_output=True, text=True, timeout=3, check=True)
+                                 capture_output=True, text=True, timeout=3, check=True,
+                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             names = {line.strip() for line in run.stdout.splitlines() if line.strip()}
         except (OSError, subprocess.SubprocessError):
             names = set()
