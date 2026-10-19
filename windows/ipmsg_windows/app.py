@@ -67,6 +67,7 @@ def main() -> int:
         def __init__(self):
             super().__init__(); self.setWindowTitle("IP Messenger"); self.resize(520, 620)
             root = QVBoxLayout(); root.addWidget(QLabel("IP Messenger — LAN内の手紙"))
+            root.addWidget(QLabel(f"この端末の鍵指紋（64桁）: {self_id}"))
             self.peers = QListWidget(); self.peers.setSelectionMode(QListWidget.MultiSelection); root.addWidget(self.peers)
             all_button = QPushButton("📢 全端末（自分を含む）"); all_button.setMinimumHeight(52)
             self_button = QPushButton("📝 自分宛て"); root.addWidget(all_button); root.addWidget(self_button)
