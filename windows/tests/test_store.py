@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
+from ipmsg_windows.identity import load_or_create
+from ipmsg_windows.protocol import fingerprint
 from ipmsg_windows.store import Store
 
 
@@ -32,6 +34,12 @@ class StoreTest(unittest.TestCase):
         self.assertFalse(self.store.discover("b"*64,"Evil","other","192.168.1.9",100_001))
         self.store.trust("b"*64,False)
         with self.assertRaises(ValueError): self.store.receive("00000000-0000-0000-0000-000000000002","b"*64,"Android","x")
+
+    def test_test_identity_persists_only_with_explicit_opt_in(self):
+        path=Path(self.temp.name)/"identity.test-only"
+        first=load_or_create(path,allow_unprotected_test_storage=True)
+        second=load_or_create(path,allow_unprotected_test_storage=True)
+        self.assertEqual(fingerprint(first.public_key()),fingerprint(second.public_key()))
 
 if __name__ == "__main__": unittest.main()
 

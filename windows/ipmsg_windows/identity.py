@@ -20,15 +20,22 @@ def _dpapi(data: bytes, decrypt: bool) -> bytes:
     source_buffer = ctypes.create_string_buffer(data)
     source = _Blob(len(data), ctypes.cast(source_buffer, ctypes.POINTER(ctypes.c_byte)))
     output = _Blob()
-    crypt32, kernel32 = ctypes.windll.crypt32, ctypes.windll.kernel32
+    crypt32, kernel32 = ctypes.WinDLL("crypt32", use_last_error=True), ctypes.WinDLL("kernel32", use_last_error=True)
+    tail = [ctypes.POINTER(_Blob), ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD,
+            ctypes.POINTER(_Blob)]
+    crypt32.CryptProtectData.argtypes = [ctypes.POINTER(_Blob), wintypes.LPCWSTR, *tail]
+    crypt32.CryptProtectData.restype = wintypes.BOOL
+    crypt32.CryptUnprotectData.argtypes = [ctypes.POINTER(_Blob), ctypes.POINTER(wintypes.LPWSTR), *tail]
+    crypt32.CryptUnprotectData.restype = wintypes.BOOL
+    description = ctypes.c_wchar_p("Xiaqui IP Messenger")
     function = crypt32.CryptUnprotectData if decrypt else crypt32.CryptProtectData
-    args = (ctypes.byref(source), None, None, None, None, 0, ctypes.byref(output)) if decrypt else (
-        ctypes.byref(source), "Xiaqui IP Messenger", None, None, None, 0, ctypes.byref(output))
-    if not function(*args):
+    if not function(ctypes.byref(source), None if decrypt else description, None, None, None, 0,
+                    ctypes.byref(output)):
         raise ctypes.WinError()
     try:
         return ctypes.string_at(output.pbData, output.cbData)
     finally:
+        kernel32.LocalFree.argtypes = [ctypes.c_void_p]
         kernel32.LocalFree(output.pbData)
 
 

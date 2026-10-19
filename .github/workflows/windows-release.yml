@@ -58,7 +58,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path verify | Out-Null
-          gh release download "${{ steps.package.outputs.tag }}" --dir verify --pattern "ipmsg-windows-*.zip"
+          $downloaded = $false
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            gh release download "${{ steps.package.outputs.tag }}" --dir verify --pattern "ipmsg-windows-*.zip" --clobber
+            if ($LASTEXITCODE -eq 0) { $downloaded = $true; break }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $downloaded) { throw "Release asset was not downloadable after bounded retry" }
           $source = Get-FileHash "${{ steps.package.outputs.zip }}" -Algorithm SHA256
           $download = Get-FileHash "verify/${{ steps.package.outputs.zip }}" -Algorithm SHA256
           if ($source.Hash -ne $download.Hash) { throw "Release re-download SHA mismatch" }
