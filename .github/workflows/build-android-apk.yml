@@ -4,13 +4,29 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths-ignore: ['docs/**', '**/*.md']
+    paths:
+      - 'app/**'
+      - 'build.gradle*'
+      - 'settings.gradle*'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - '.github/workflows/build-android-apk.yml'
   pull_request:
     branches: [main]
-    paths-ignore: ['docs/**', '**/*.md']
+    paths:
+      - 'app/**'
+      - 'build.gradle*'
+      - 'settings.gradle*'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - '.github/workflows/build-android-apk.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  group: android-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
