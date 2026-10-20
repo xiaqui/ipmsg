@@ -96,7 +96,8 @@ def main() -> int:
                 for peer in store.peers():
                     state="ONLINE" if peer.online() else "OFFLINE"; trust="承認済" if peer.trusted else "未承認"
                     name="".join(ch if ch.isprintable() and ch not in "\r\n" else "�" for ch in peer.name)
-                    item=QListWidgetItem(f"{name}  {state} / {trust}\n{peer.peer_id}");item.setData(Qt.UserRole,peer.peer_id)
+                    label = f"{name}  {state} / {trust}" if peer.trusted else f"{name}  {state} / {trust}\n{peer.peer_id}"
+                    item=QListWidgetItem(label);item.setData(Qt.UserRole,peer.peer_id)
                     self.peers.addItem(item)
                     if peer.peer_id in selected_ids: item.setSelected(True)
             finally:
@@ -105,7 +106,17 @@ def main() -> int:
             self.recipients = None
             self.destination.setText("宛先: 選択した端末")
         def select_destination(self, ids, title):
-            self.recipients = ids
+            # Display selected recipients in the same list used for manual selection.
+            # Self is not a peer row, so keep explicit IDs when it is included.
+            selected_ids = set(ids)
+            self.peers.blockSignals(True)
+            try:
+                for i in range(self.peers.count()):
+                    item = self.peers.item(i)
+                    item.setSelected(item.data(Qt.UserRole) in selected_ids)
+            finally:
+                self.peers.blockSignals(False)
+            self.recipients = list(dict.fromkeys(ids))
             self.destination.setText(f"宛先: {title}")
         def send_to(self, ids):
             text=self.body.toPlainText()
