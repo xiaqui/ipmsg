@@ -140,9 +140,6 @@ def main() -> int:
                 if self.recipients is not None:
                     trusted_ids = {p.peer_id for p in store.peers() if p.trusted}
                     self.recipients = [ident for ident in self.recipients if ident == self_id or ident in trusted_ids]
-                    if not peer.trusted:
-                        # A newly trusted peer is not silently added to an existing preset.
-                        pass
                 self.refresh()
         def save_name(self):
             value=self.device_name.text().strip()[:40]
