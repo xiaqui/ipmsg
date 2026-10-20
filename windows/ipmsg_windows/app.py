@@ -96,7 +96,7 @@ def main() -> int:
                 for peer in store.peers():
                     state="ONLINE" if peer.online() else "OFFLINE"; trust="承認済" if peer.trusted else "未承認"
                     name="".join(ch if ch.isprintable() and ch not in "\r\n" else "�" for ch in peer.name)
-                    label = f"{name}  {state} / {trust}" if peer.trusted else f"{name}  {state} / {trust}\n{peer.peer_id}"
+                    label = f"{name}  {state} / {trust}  [ID:{peer.peer_id[:8]}]" if peer.trusted else f"{name}  {state} / {trust}\n{peer.peer_id}"
                     item=QListWidgetItem(label);item.setData(Qt.UserRole,peer.peer_id)
                     self.peers.addItem(item)
                     if peer.peer_id in selected_ids: item.setSelected(True)
@@ -134,7 +134,16 @@ def main() -> int:
             else:
                 answer=QMessageBox.question(self,"双方で鍵指紋を全文照合",
                     f"相手画面と64桁すべてが一致した場合だけ承認してください。\n\n{peer.peer_id}")
-            if answer==QMessageBox.Yes: store.trust(peer.peer_id,not peer.trusted);self.refresh()
+            if answer==QMessageBox.Yes:
+                store.trust(peer.peer_id, not peer.trusted)
+                # Preset recipients must be recalculated after trust changes.
+                if self.recipients is not None:
+                    trusted_ids = {p.peer_id for p in store.peers() if p.trusted}
+                    self.recipients = [ident for ident in self.recipients if ident == self_id or ident in trusted_ids]
+                    if not peer.trusted:
+                        # A newly trusted peer is not silently added to an existing preset.
+                        pass
+                self.refresh()
         def save_name(self):
             value=self.device_name.text().strip()[:40]
             if not value: QMessageBox.warning(self,"端末名","空の端末名は使えません");return
