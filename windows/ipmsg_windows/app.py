@@ -88,11 +88,19 @@ def main() -> int:
             approve.clicked.connect(self.toggle_trust);inbox.clicked.connect(lambda:self.show_letters(True));outbox.clicked.connect(lambda:self.show_letters(False))
             self.refresh()
         def refresh(self):
-            self.peers.clear()
-            for peer in store.peers():
-                state="ONLINE" if peer.online() else "OFFLINE"; trust="承認済" if peer.trusted else "未承認"
-                name="".join(ch if ch.isprintable() and ch not in "\r\n" else "�" for ch in peer.name)
-                item=QListWidgetItem(f"{name}  {state} / {trust}\n{peer.peer_id}");item.setData(Qt.UserRole,peer.peer_id);self.peers.addItem(item)
+            # Rebuilding the list is not a user change of destination.
+            selected_ids = {i.data(Qt.UserRole) for i in self.peers.selectedItems()}
+            self.peers.blockSignals(True)
+            try:
+                self.peers.clear()
+                for peer in store.peers():
+                    state="ONLINE" if peer.online() else "OFFLINE"; trust="承認済" if peer.trusted else "未承認"
+                    name="".join(ch if ch.isprintable() and ch not in "\r\n" else "�" for ch in peer.name)
+                    item=QListWidgetItem(f"{name}  {state} / {trust}\n{peer.peer_id}");item.setData(Qt.UserRole,peer.peer_id)
+                    self.peers.addItem(item)
+                    if peer.peer_id in selected_ids: item.setSelected(True)
+            finally:
+                self.peers.blockSignals(False)
         def use_selected_peers(self):
             self.recipients = None
             self.destination.setText("宛先: 選択した端末")
