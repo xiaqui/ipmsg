@@ -219,6 +219,22 @@ class LanNode:
             raise ValueError("UNTRUSTED")
         return answer
 
+    def _process_file_batch(self, transfer, peer: Peer) -> None:
+        # Run consecutive acknowledged chunks in the worker; the one-second clock
+        # is for polling and retry backoff, not a per-chunk rate limiter.
+        for _ in range(128):
+            before=self.store.transfer_files(transfer.transfer_id)
+            signature=tuple((f.file_id,f.offset,f.state) for f in before)
+            self.files.process(transfer,peer,lambda fields:self._exchange_file(peer,fields))
+            updated=self.store.transfer(transfer.transfer_id,transfer.peer_id,False)
+            if updated.state!="TRANSFERRING":
+                break
+            after=self.store.transfer_files(transfer.transfer_id)
+            progress=tuple((f.file_id,f.offset,f.state) for f in after)
+            if signature==progress:
+                break
+            transfer=updated
+
     def _clock_loop(self) -> None:
         next_hello = 0.0
         while not self.stop_event.wait(1):
@@ -230,7 +246,6 @@ class LanNode:
                 if peer: self.pool.submit(self._send, letter, peer)
             for transfer in self.store.due_transfers(now,2):
                 peer=peers.get(transfer.peer_id)
-                if peer:self.pool.submit(self.files.process,transfer,peer,
-                                         lambda fields,p=peer:self._exchange_file(p,fields))
+                if peer:self.pool.submit(self._process_file_batch,transfer,peer)
 
 
