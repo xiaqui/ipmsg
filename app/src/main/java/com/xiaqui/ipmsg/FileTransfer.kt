@@ -199,10 +199,13 @@ class FileTransferManager(private val context:Context,private val store:Store,
         val known=store.transferFiles(id).firstOrNull { it.fileId==fileId } ?:return error(id,"INVALID_METADATA",false,fileId)
         if(known.state=="COMPLETED"&&body.getString("sha256")==known.sha256)
             return JSONObject().put("type","FILE_COMPLETE_ACK").put("transferId",id).put("fileId",fileId).put("sha256",known.sha256)
-        if(transfer.state=="FINALIZING") return error(id,"TIMEOUT",true,fileId)
-        val (_,file)=incoming(id,peer.id,fileId)
+        // A persisted FINALIZING may survive a process death; restart it if no worker exists.
+        if(transfer.state=="FINALIZING" && key(id,fileId) in finalizing) return error(id,"TIMEOUT",true,fileId)
+        val (_,file)=if(transfer.state=="FINALIZING") transfer to known else incoming(id,peer.id,fileId)
         if(body.getLong("size")!=file.size||body.getString("sha256")!=file.sha256||file.offset!=file.size) return error(id,"HASH_MISMATCH",false,fileId)
-        if(File(file.temp).length()!=file.size||file.prefixSha256!=file.sha256) return error(id,"HASH_MISMATCH",false,fileId)
+        val (actualHash,actualLength)=runCatching { hashFile(FileInputStream(file.temp)) }
+            .getOrElse { return error(id,"IO_ERROR",true,fileId) }
+        if(actualLength!=file.size||actualHash!=file.sha256) return error(id,"HASH_MISMATCH",false,fileId)
         val task=key(id,fileId)
         if(finalizing.add(task)) {
             store.setTransferState(id,peer.id,true,"FINALIZING")
@@ -300,7 +303,13 @@ class FileTransferManager(private val context:Context,private val store:Store,
             val activeId=file.fileId
             file=store.transferFiles(transfer.id).first { it.fileId==activeId }
             if(file.offset<file.size) {
-                val input=context.contentResolver.openInputStream(Uri.parse(file.source))!!;val data=input.use { skip(it,file.offset);it.readBytesBounded(FileContract.CHUNK) }
+                val uri=Uri.parse(file.source)
+                val data=context.contentResolver.openFileDescriptor(uri,"r")!!.use { descriptor ->
+                    FileInputStream(descriptor.fileDescriptor).use { input ->
+                        input.channel.position(file.offset)
+                        input.readBytesBounded(FileContract.CHUNK)
+                    }
+                }
                 require(data.isNotEmpty()) { "SOURCE_CHANGED" }
                 val answer=exchange(JSONObject().put("type","FILE_CHUNK").put("transferId",transfer.id).put("fileId",file.fileId)
                     .put("seq",file.offset/FileContract.CHUNK).put("offset",file.offset).put("data",Protocol.encode(data)).put("sha256",FileContract.sha(data)))
