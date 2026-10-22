@@ -289,7 +289,7 @@ class FileTransferManager(private val context:Context,private val store:Store,
             var file=files.firstOrNull { it.state!="COMPLETED" }
             if(file==null) { store.setTransferState(transfer.id,peer.id,false,"COMPLETED");return }
             val cacheKey=key(transfer.id,file.fileId)
-            if(resumed.add(cacheKey)) {
+            if(file.offset<file.size&&resumed.add(cacheKey)) {
                 val answer=exchange(JSONObject().put("type","FILE_RESUME").put("transferId",transfer.id).put("fileId",file.fileId)
                     .put("offset",file.offset).put("prefixSha256",file.prefixSha256))
                 if(answer.optString("type")=="FILE_ERROR"&&answer.optString("code") in setOf("CANCELLED","DECLINED")) {
