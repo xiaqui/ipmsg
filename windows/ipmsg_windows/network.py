@@ -14,7 +14,7 @@ import psutil
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from . import protocol
-from .file_transfer import FileTransferCore, NoResponse
+from .file_transfer import FileTransferCore
 from .store import Peer, Store
 
 
@@ -185,7 +185,6 @@ class LanNode:
                 reply = protocol.seal(response,self.private,protocol.load_public(peer.public_key))
                 conn.sendall(protocol.pack_frame(reply))
                 self.on_change()
-            except NoResponse:return
             except (OSError, EOFError, ValueError, KeyError): return
 
     def _send(self, letter, peer: Peer) -> None:

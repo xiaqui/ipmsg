@@ -21,8 +21,9 @@ class FileTransferRuntimeTest {
     private lateinit var store:Store
     private lateinit var peer:Peer
     private lateinit var manager:FileTransferManager
+    private lateinit var context:android.content.Context
     @Before fun setup() {
-        val context=RuntimeEnvironment.getApplication()
+        context=RuntimeEnvironment.getApplication()
         context.deleteDatabase("ipmsg.db");store=Store(context)
         val pair=KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
         val hello=Protocol.readHello(Protocol.hello("peer",pair,100000),100000)
@@ -38,9 +39,10 @@ class FileTransferRuntimeTest {
 
     @Test fun consentChunkDuplicateResumeAndCancelAreDurable() {
         val bytes="Android ↔ Windows file".toByteArray();val file=metadata(bytes);val id=UUID.randomUUID().toString()
-        assertThrows(PendingConsent::class.java) { manager.handle(peer,offer(id,file)) }
+        assertEquals("TIMEOUT",manager.handle(peer,offer(id,file)).getString("code"))
         val waiting=store.transfer(id,peer.id,true);assertEquals("WAITING_ACCEPT",waiting.state)
-        manager.accept(waiting,Uri.parse("content://example/tree/root"))
+        val temp=java.io.File(context.filesDir,"$id.part").apply { writeBytes(ByteArray(0)) }
+        store.acceptTransfer(id,peer.id,Uri.parse("content://example/tree/root").toString(),mapOf(file.fileId to temp.absolutePath))
         val accepted=manager.handle(peer,offer(id,file));assertEquals("FILE_ACCEPT",accepted.getString("type"))
         val chunk=JSONObject().put("type","FILE_CHUNK").put("transferId",id).put("fileId",file.fileId)
             .put("seq",0).put("offset",0).put("data",Base64.encodeToString(bytes,Base64.NO_WRAP))

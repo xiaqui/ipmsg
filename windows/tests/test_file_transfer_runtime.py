@@ -1,9 +1,10 @@
 import hashlib
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
-from ipmsg_windows.file_transfer import (CHUNK_BYTES, FileTransferCore, NoResponse,
+from ipmsg_windows.file_transfer import (CHUNK_BYTES, FileTransferCore, MAX_FILE_BYTES,
                                          accept_to_directory, queue_paths, valid_name)
 from ipmsg_windows.store import Store
 
@@ -52,6 +53,24 @@ class FileTransferRuntimeTest(unittest.TestCase):
             with self.assertRaises(ValueError):queue_paths(store,[peer],[str(source)])
             store.db.close()
 
+    def test_multiple_recipients_and_space_gate_are_independent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=Store(Path(folder)/"db.sqlite");one="b"*64;two="d"*64
+            for peer in (one,two):
+                store.discover(peer,peer[:4],"key-"+peer[:4],"192.168.1.2",1,True);store.trust(peer,True)
+            source=Path(folder)/"multi.apk";source.write_bytes(b"apk")
+            ids=queue_paths(store,[one,two],[str(source)])
+            self.assertEqual(2,len(set(ids)))
+            self.assertEqual({one,two},{t.peer_id for t in store.transfers(False)})
+            incoming=store.receive_offer(str(__import__("uuid").uuid4()),one,"peer",[{
+                "fileId":str(__import__("uuid").uuid4()),"name":"large.zip","mime":"application/zip",
+                "size":MAX_FILE_BYTES,"sha256":"0"*64}])
+            destination=Path(folder)/"save";destination.mkdir()
+            usage=__import__("collections").namedtuple("usage","total used free")(100,100,0)
+            with mock.patch("ipmsg_windows.file_transfer.shutil.disk_usage",return_value=usage),self.assertRaises(OSError):
+                accept_to_directory(store,incoming,str(destination))
+            store.db.close()
+
     def test_chunk_constant_keeps_plain_frame_bounded(self):
         encoded=((CHUNK_BYTES+2)//3)*4
         self.assertLess(encoded+4096,52_000)
@@ -78,8 +97,7 @@ class FileTransferRuntimeTest(unittest.TestCase):
             sender_peer=receiver.peers()[0];receiver_peer=sender.peers()[0]
             exchange=lambda message:receiving.handle(sender_peer,message)
             sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
-            try:sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
-            except NoResponse:pass
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
             receiver.transfer(transfer_id,sender_id,True)
             receiver.set_transfer_state(transfer_id,sender_id,True,"DECLINED","CANCELLED")
             answer=receiving.handle(sender_peer,{"type":"FILE_RESUME","transferId":transfer_id,
@@ -89,6 +107,35 @@ class FileTransferRuntimeTest(unittest.TestCase):
             sender.set_transfer_state(transfer_id,receiver_id,False,"CANCEL_PENDING","CANCELLED",0)
             sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
             self.assertEqual("CANCELLED",sender.transfer(transfer_id,receiver_id,False).state)
+            sender.db.close();receiver.db.close()
+
+    def test_lost_chunk_ack_restarts_from_receiver_offset(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sender,receiver,sender_id,receiver_id=self.stores(folder)
+            source=Path(folder)/"resume.bin";source.write_bytes(b"r"*(CHUNK_BYTES+9))
+            transfer_id=queue_paths(sender,[receiver_id],[str(source)])[0]
+            sending=FileTransferCore(sender);receiving=FileTransferCore(receiver)
+            sender_peer=receiver.peers()[0];receiver_peer=sender.peers()[0]
+            exchange=lambda message:receiving.handle(sender_peer,message)
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            incoming=receiver.transfer(transfer_id,sender_id,True);destination=Path(folder)/"out";destination.mkdir()
+            accept_to_directory(receiver,incoming,str(destination))
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)  # accept
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)  # resume
+            def lose_ack(message):
+                receiving.handle(sender_peer,message)
+                raise EOFError("lost ACK")
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,lose_ack)
+            self.assertEqual(0,sender.transfer_files(transfer_id)[0].offset)
+            self.assertEqual(CHUNK_BYTES,receiver.transfer_files(transfer_id)[0].offset)
+            restarted=FileTransferCore(sender)
+            for _ in range(10):
+                transfer=sender.transfer(transfer_id,receiver_id,False)
+                if transfer.state=="COMPLETED":break
+                restarted.process(transfer,receiver_peer,exchange)
+            self.assertEqual("COMPLETED",sender.transfer(transfer_id,receiver_id,False).state)
+            self.assertEqual(source.read_bytes(),(destination/"resume.bin").read_bytes())
             sender.db.close();receiver.db.close()
 
 

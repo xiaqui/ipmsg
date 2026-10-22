@@ -220,10 +220,14 @@ class MainActivity : Activity() {
         if(transfer.state !in setOf("COMPLETED","CANCELLED","DECLINED")) builder.setNeutralButton("拒否／取消") { _,_ ->
             AlertDialog.Builder(this).setTitle("転送を中止").setMessage("この転送を取り消しますか？")
                 .setNegativeButton("戻る",null).setPositiveButton("中止") { _,_ -> fileManager.decline(transfer);toast("中止しました") }.show()
-        } else if(transfer.incoming&&transfer.state=="COMPLETED"&&files.size==1&&files[0].finalPath.isNotEmpty())
-            builder.setPositiveButton("安全に開く") { _,_ ->
-                runCatching { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(files[0].finalPath),files[0].mime)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { toast("対応するアプリがありません") }
+        } else if(transfer.incoming&&transfer.state=="COMPLETED"&&files.any { it.finalPath.isNotEmpty() })
+            builder.setPositiveButton("完了ファイルを選んで開く") { _,_ ->
+                val completed=files.filter { it.finalPath.isNotEmpty() }
+                AlertDialog.Builder(this).setTitle("開くファイル").setItems(completed.map { it.name }.toTypedArray()) { _,index ->
+                    val file=completed[index]
+                    runCatching { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(file.finalPath),file.mime)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { toast("対応するアプリがありません") }
+                }.setNegativeButton("閉じる",null).show()
             }
         builder.show()
     }

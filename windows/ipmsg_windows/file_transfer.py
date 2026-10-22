@@ -25,10 +25,6 @@ RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
             *(f"LPT{i}" for i in range(1, 10))}
 
 
-class NoResponse(Exception):
-    """A valid offer is waiting for local user consent; close without leaking state."""
-
-
 def sha256_file(path: Path, limit: int | None = None) -> tuple[str, int]:
     digest=hashlib.sha256(); count=0
     with path.open("rb") as source:
@@ -189,7 +185,8 @@ class FileTransferCore:
         transfer=self.store.receive_offer(transfer_id,peer.peer_id,peer.name,files)
         self.on_change();self.on_offer(peer.name,transfer_id)
         if transfer.state=="DECLINED": return self._error(transfer_id,"DECLINED",False)
-        if transfer.state not in ("TRANSFERRING","PAUSED","COMPLETED"): raise NoResponse()
+        if transfer.state not in ("TRANSFERRING","PAUSED","COMPLETED"):
+            return self._error(transfer_id,"TIMEOUT",True)
         selected=[{"fileId":f.file_id,"offset":f.offset,"prefixSha256":f.prefix_sha256}
                   for f in self.store.transfer_files(transfer_id) if f.state!="COMPLETED"]
         return {"type":"FILE_ACCEPT","transferId":transfer_id,"selected":selected}
@@ -307,6 +304,7 @@ class FileTransferCore:
                                  "offset":current.offset,"prefixSha256":current.prefix_sha256})
                 if answer.get("type")=="FILE_ERROR" and answer.get("code") in ("CANCELLED","DECLINED"):
                     self.store.set_transfer_state(transfer.transfer_id,peer.peer_id,False,"CANCELLED",answer["code"]);return
+                if answer.get("type")=="FILE_ERROR" and answer.get("retryable",False):return
                 if answer.get("type")!="FILE_CHUNK_ACK":raise ValueError("OFFSET_MISMATCH")
                 offset=answer.get("nextOffset");prefix=answer.get("prefixSha256")
                 if not isinstance(offset,int) or not 0<=offset<=current.size or not SHA_RE.fullmatch(str(prefix)):
@@ -324,6 +322,7 @@ class FileTransferCore:
                     "data":base64.b64encode(data).decode("ascii"),"sha256":hashlib.sha256(data).hexdigest()})
                 if answer.get("type")=="FILE_ERROR" and answer.get("code") in ("CANCELLED","DECLINED"):
                     self.store.set_transfer_state(transfer.transfer_id,peer.peer_id,False,"CANCELLED",answer["code"]);return
+                if answer.get("type")=="FILE_ERROR" and answer.get("retryable",False):return
                 expected=current.offset+len(data)
                 if answer.get("type")!="FILE_CHUNK_ACK" or answer.get("nextOffset")!=expected:
                     raise ValueError("OFFSET_MISMATCH")
@@ -337,12 +336,13 @@ class FileTransferCore:
                              "size":current.size,"sha256":current.sha256})
             if answer.get("type")=="FILE_ERROR" and answer.get("code") in ("CANCELLED","DECLINED"):
                 self.store.set_transfer_state(transfer.transfer_id,peer.peer_id,False,"CANCELLED",answer["code"]);return
+            if answer.get("type")=="FILE_ERROR" and answer.get("retryable",False):return
             if answer.get("type")!="FILE_COMPLETE_ACK" or answer.get("sha256")!=current.sha256:
                 raise ValueError("HASH_MISMATCH")
             self.store.update_file_progress(transfer.transfer_id,current.file_id,current.size,current.sha256,"COMPLETED")
             if all(f.state=="COMPLETED" for f in self.store.transfer_files(transfer.transfer_id)):
                 self.store.set_transfer_state(transfer.transfer_id,peer.peer_id,False,"COMPLETED")
-        except (OSError,ValueError,KeyError,EOFError,NoResponse) as error:
+        except (OSError,ValueError,KeyError,EOFError) as error:
             code=str(error) if str(error) in {"UNSUPPORTED","SOURCE_CHANGED","OFFSET_MISMATCH","HASH_MISMATCH"} else "IO_ERROR"
             state="FAILED" if code in {"UNSUPPORTED","SOURCE_CHANGED","HASH_MISMATCH"} else transfer.state
             self.store.set_transfer_state(transfer.transfer_id,peer.peer_id,False,state,code)

@@ -38,7 +38,7 @@ def main() -> int:
     from PySide6.QtNetwork import QLocalServer, QLocalSocket
     from PySide6.QtGui import QAction
     from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
-        QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QStyle,
+        QInputDialog, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QStyle,
         QSystemTrayIcon, QTextEdit, QVBoxLayout)
     from .identity import default_data_dir, load_or_create
     from .network import LanNode
@@ -226,7 +226,8 @@ def main() -> int:
                 details.setPlainText("\n\n".join(lines)+(f"\n\nエラー: {transfer.error}" if transfer.error else ""))
             listing.currentRowChanged.connect(show_detail)
             controls=QHBoxLayout();accept=QPushButton("受信して保存先を選択");decline=QPushButton("拒否 / 取消")
-            controls.addWidget(accept);controls.addWidget(decline);layout.addLayout(controls)
+            open_file=QPushButton("完了ファイルを開く")
+            controls.addWidget(accept);controls.addWidget(decline);controls.addWidget(open_file);layout.addLayout(controls)
             def accept_current():
                 transfer=current()
                 if not transfer or not transfer.incoming or transfer.state not in ("WAITING_ACCEPT","PAUSED"):return
@@ -249,6 +250,18 @@ def main() -> int:
                                          "DECLINED" if transfer.incoming else "CANCEL_PENDING","CANCELLED",0)
                 reload();self.refresh()
             accept.clicked.connect(accept_current);decline.clicked.connect(decline_current)
+            def open_current():
+                transfer=current()
+                if not transfer or not transfer.incoming:return
+                available=[f for f in store.transfer_files(transfer.transfer_id) if f.state=="COMPLETED" and f.final]
+                if not available:return
+                names=[f.name for f in available]
+                chosen,ok=QInputDialog.getItem(dialog,"完了ファイルを開く","ファイル",names,0,False)
+                if ok:
+                    target=next(f.final for f in available if f.name==chosen)
+                    try:os.startfile(target)
+                    except OSError as error:QMessageBox.warning(dialog,"開けません",str(error))
+            open_file.clicked.connect(open_current)
             reload();dialog.resize(620,520);dialog.exec()
         def closeEvent(self,event): event.ignore();self.hide();tray.showMessage("IP Messenger","受信を続けています")
 

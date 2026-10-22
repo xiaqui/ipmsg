@@ -53,8 +53,6 @@ object FileContract {
         .put("mime",file.mime).put("size",file.size).put("sha256",file.sha256)
 }
 
-class PendingConsent: Exception()
-
 class FileTransferManager(private val context:Context,private val store:Store,
     private val changed:()->Unit,private val offered:(String,String)->Unit) {
     private data class DigestState(val offset:Long,val digest:MessageDigest)
@@ -143,7 +141,7 @@ class FileTransferManager(private val context:Context,private val store:Store,
         val transfer=store.receiveOffer(id,peer,FileContract.parseFiles(body.getJSONArray("files")))
         changed();offered(peer.name,id)
         if(transfer.state=="DECLINED") return error(id,"DECLINED",false)
-        if(transfer.state !in setOf("TRANSFERRING","PAUSED","COMPLETED")) throw PendingConsent()
+        if(transfer.state !in setOf("TRANSFERRING","PAUSED","COMPLETED")) return error(id,"TIMEOUT",true)
         val selected=JSONArray();store.transferFiles(id).filter { it.state!="COMPLETED" }.forEach { file ->
             selected.put(JSONObject().put("fileId",file.fileId).put("offset",file.offset).put("prefixSha256",file.prefixSha256)) }
         return JSONObject().put("type","FILE_ACCEPT").put("transferId",id).put("selected",selected)
@@ -201,7 +199,7 @@ class FileTransferManager(private val context:Context,private val store:Store,
         val known=store.transferFiles(id).firstOrNull { it.fileId==fileId } ?:return error(id,"INVALID_METADATA",false,fileId)
         if(known.state=="COMPLETED"&&body.getString("sha256")==known.sha256)
             return JSONObject().put("type","FILE_COMPLETE_ACK").put("transferId",id).put("fileId",fileId).put("sha256",known.sha256)
-        if(transfer.state=="FINALIZING") throw PendingConsent()
+        if(transfer.state=="FINALIZING") return error(id,"TIMEOUT",true,fileId)
         val (_,file)=incoming(id,peer.id,fileId)
         if(body.getLong("size")!=file.size||body.getString("sha256")!=file.sha256||file.offset!=file.size) return error(id,"HASH_MISMATCH",false,fileId)
         if(File(file.temp).length()!=file.size||file.prefixSha256!=file.sha256) return error(id,"HASH_MISMATCH",false,fileId)
@@ -213,7 +211,7 @@ class FileTransferManager(private val context:Context,private val store:Store,
                 finally { finalizing.remove(task);changed() }
             }.start()
         }
-        throw PendingConsent()
+        return error(id,"TIMEOUT",true,fileId)
     }
     private fun finalizeIncoming(transfer:Transfer,file:TransferFile) {
         val id=transfer.id;val fileId=file.fileId
@@ -274,7 +272,7 @@ class FileTransferManager(private val context:Context,private val store:Store,
             }
             if(transfer.state=="QUEUED") { val request=UUID.randomUUID().toString();val answer=exchange(caps(request))
                 require(answer.getString("type")=="CAPS"&&answer.getString("requestId")==request) { "UNSUPPORTED" }
-                store.setTransferState(transfer.id,peer.id,false,"OFFERING",next=0);return }
+                store.setTransferState(transfer.id,peer.id,false,"OFFERING",next=0L);return }
             val files=store.transferFiles(transfer.id)
             if(transfer.state in setOf("OFFERING","WAITING_ACCEPT")) {
                 val array=JSONArray();files.forEach { array.put(FileContract.json(it)) }
@@ -293,6 +291,7 @@ class FileTransferManager(private val context:Context,private val store:Store,
                     .put("offset",file.offset).put("prefixSha256",file.prefixSha256))
                 if(answer.optString("type")=="FILE_ERROR"&&answer.optString("code") in setOf("CANCELLED","DECLINED")) {
                     store.setTransferState(transfer.id,peer.id,false,"CANCELLED",answer.optString("code"));return }
+                if(answer.optString("type")=="FILE_ERROR"&&answer.optBoolean("retryable")) return
                 require(answer.getString("type")=="FILE_CHUNK_ACK") { "OFFSET_MISMATCH" }
                 val offset=answer.getLong("nextOffset");val prefix=answer.getString("prefixSha256")
                 require(offset in 0..file.size&&FileContract.validHash(prefix)) { "OFFSET_MISMATCH" }
@@ -307,6 +306,7 @@ class FileTransferManager(private val context:Context,private val store:Store,
                     .put("seq",file.offset/FileContract.CHUNK).put("offset",file.offset).put("data",Protocol.encode(data)).put("sha256",FileContract.sha(data)))
                 if(answer.optString("type")=="FILE_ERROR"&&answer.optString("code") in setOf("CANCELLED","DECLINED")) {
                     store.setTransferState(transfer.id,peer.id,false,"CANCELLED",answer.optString("code"));return }
+                if(answer.optString("type")=="FILE_ERROR"&&answer.optBoolean("retryable")) return
                 val expected=file.offset+data.size;require(answer.getString("type")=="FILE_CHUNK_ACK"&&answer.getLong("nextOffset")==expected) { "OFFSET_MISMATCH" }
                 val digest=digestFor(file,false);digest.update(data);val prefix=hex(digest.clone() as MessageDigest)
                 require(answer.getString("prefixSha256")==prefix) { "HASH_MISMATCH" }
@@ -318,6 +318,7 @@ class FileTransferManager(private val context:Context,private val store:Store,
                 .put("size",file.size).put("sha256",file.sha256))
             if(answer.optString("type")=="FILE_ERROR"&&answer.optString("code") in setOf("CANCELLED","DECLINED")) {
                 store.setTransferState(transfer.id,peer.id,false,"CANCELLED",answer.optString("code"));return }
+            if(answer.optString("type")=="FILE_ERROR"&&answer.optBoolean("retryable")) return
             require(answer.getString("type")=="FILE_COMPLETE_ACK"&&answer.getString("sha256")==file.sha256) { "HASH_MISMATCH" }
             store.updateFileProgress(transfer.id,file.fileId,file.size,file.sha256,"COMPLETED")
             if(store.transferFiles(transfer.id).all { it.state=="COMPLETED" }) store.setTransferState(transfer.id,peer.id,false,"COMPLETED")
