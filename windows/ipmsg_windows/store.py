@@ -310,8 +310,8 @@ class Store:
         now=int(time.time()*1000)
         with self.db:
             self.db.execute("UPDATE file_transfers SET state=?,error=?,updated=?,next=COALESCE(?,next),"
-                "attempts=CASE WHEN ?=0 THEN 0 ELSE attempts END WHERE id=? AND peer=? AND incoming=?",
-                (state,error,now,next_attempt,next_attempt,transfer_id,peer_id,int(incoming)))
+                "attempts=CASE WHEN ?=0 THEN 0 ELSE attempts END WHERE id=? AND peer=? AND incoming=? AND (incoming=1 OR state NOT IN ('CANCEL_PENDING','CANCELLED') OR ?='CANCELLED')",
+                (state,error,now,next_attempt,next_attempt,transfer_id,peer_id,int(incoming),state))
 
     @synchronized
     def update_file_progress(self, transfer_id: str, file_id: str, offset: int, prefix: str,
