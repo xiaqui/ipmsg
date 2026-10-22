@@ -249,7 +249,8 @@ class FileTransferCore:
         transfer,file=self._incoming_file(transfer_id,peer.peer_id,file_id)
         if body.get("size")!=file.size or body.get("sha256")!=file.sha256 or file.offset!=file.size:
             return self._error(transfer_id,"HASH_MISMATCH",False,file_id)
-        if Path(file.temp).stat().st_size!=file.size or file.prefix_sha256!=file.sha256:
+        actual_hash, actual_size = sha256_file(Path(file.temp))
+        if actual_size!=file.size or actual_hash!=file.sha256:
             return self._error(transfer_id,"HASH_MISMATCH",False,file_id)
         root=Path(transfer.destination).resolve()
         if not root.is_dir() or root.is_symlink():return self._error(transfer_id,"PERMISSION_LOST",False,file_id)
