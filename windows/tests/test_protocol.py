@@ -64,7 +64,12 @@ class ProtocolTest(unittest.TestCase):
                          (text["type"],text["id"],text["body"]))
         ack=protocol.open_frame(vector["ackFrame"].encode(),sender,recipient.public_key())
         self.assertEqual(("ACK",vector["messageId"]),(ack["type"],ack["id"]))
+        offer=protocol.open_frame(vector["fileOfferFrame"].encode(),recipient,sender.public_key())
+        self.assertEqual(("FILE_OFFER","Android画像.png"),(offer["type"],offer["files"][0]["name"]))
+        chunk=protocol.open_frame(vector["fileChunkFrame"].encode(),recipient,sender.public_key())
+        self.assertEqual(("FILE_CHUNK",b"Android vector file"),(chunk["type"],protocol._unb64(chunk["data"])))
 
 
 if __name__ == "__main__": unittest.main()
+
 

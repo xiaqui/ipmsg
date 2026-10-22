@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xiaqui-ipmsg-windows"
-version = "0.5.0"
+version = "0.6.0"
 description = "LAN-only IP Messenger Windows client compatible with Android protocol v1"
 requires-python = ">=3.12"
 dependencies = [
@@ -25,4 +25,5 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E9", "F"]
+
 

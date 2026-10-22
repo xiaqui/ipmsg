@@ -12,23 +12,41 @@ import android.security.keystore.KeyProperties
 import java.util.UUID
 
 data class Peer(val id: String, val name: String, val key: String, val trusted: Boolean,
-    val host: String, val seen: Long) {
+    val host: String, val seen: Long, val fileCapable: Boolean = false) {
     fun online(now: Long) = seen > 0 && now - seen in 0..35000
 }
 data class Letter(val id: String, val peer: String, val name: String, val body: String,
     val incoming: Boolean, val created: Long, val state: String, val attempts: Int, val next: Long)
+data class Transfer(val id:String,val peer:String,val peerName:String,val incoming:Boolean,
+    val state:String,val created:Long,val updated:Long,val destination:String,val error:String,
+    val attempts:Int,val next:Long)
+data class TransferFile(val transferId:String,val fileId:String,val name:String,val mime:String,
+    val size:Long,val sha256:String,val source:String,val temp:String,val finalPath:String,
+    val offset:Long,val prefixSha256:String,val state:String)
 
 /** All delivery transitions commit synchronously before an ACK is emitted. */
-class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ipmsg.db", null, 2) {
+class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ipmsg.db", null, 3) {
     companion object { val deliveryGate = Any() }
     override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE peers(id TEXT PRIMARY KEY,name TEXT NOT NULL,pub TEXT NOT NULL,trusted INTEGER NOT NULL,host TEXT NOT NULL,seen INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE peers(id TEXT PRIMARY KEY,name TEXT NOT NULL,pub TEXT NOT NULL,trusted INTEGER NOT NULL,host TEXT NOT NULL,seen INTEGER NOT NULL,files INTEGER NOT NULL DEFAULT 0)")
         db.execSQL("CREATE TABLE letters(id TEXT NOT NULL,peer TEXT NOT NULL,name TEXT NOT NULL,body TEXT NOT NULL,incoming INTEGER NOT NULL,created INTEGER NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(id,peer,incoming))")
         db.execSQL("CREATE INDEX pending_due ON letters(incoming,state,next,created)")
         tombstones(db)
+        transferTables(db)
     }
     private fun tombstones(db: SQLiteDatabase) = db.execSQL("CREATE TABLE IF NOT EXISTS deleted_received(id TEXT NOT NULL,peer TEXT NOT NULL,digest TEXT NOT NULL,PRIMARY KEY(id,peer))")
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { tombstones(db) }
+    private fun transferTables(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS file_transfers(id TEXT NOT NULL,peer TEXT NOT NULL,peer_name TEXT NOT NULL,incoming INTEGER NOT NULL,state TEXT NOT NULL,created INTEGER NOT NULL,updated INTEGER NOT NULL,destination TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',attempts INTEGER NOT NULL DEFAULT 0,next INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(id,peer,incoming))")
+        db.execSQL("CREATE TABLE IF NOT EXISTS transfer_files(transfer_id TEXT NOT NULL,file_id TEXT NOT NULL,name TEXT NOT NULL,mime TEXT NOT NULL,size INTEGER NOT NULL,sha256 TEXT NOT NULL,source TEXT NOT NULL DEFAULT '',temp TEXT NOT NULL DEFAULT '',final TEXT NOT NULL DEFAULT '',offset INTEGER NOT NULL DEFAULT 0,prefix TEXT NOT NULL,state TEXT NOT NULL,PRIMARY KEY(transfer_id,file_id))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS transfer_due ON file_transfers(incoming,state,next,updated)")
+    }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        tombstones(db)
+        if(oldVersion<3) {
+            runCatching { db.execSQL("ALTER TABLE peers ADD COLUMN files INTEGER NOT NULL DEFAULT 0") }
+            transferTables(db)
+        }
+    }
     private fun digest(body: String) = java.security.MessageDigest.getInstance("SHA-256")
         .digest(body.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }
     fun deleteLetter(letter: Letter) = synchronized(deliveryGate) {
@@ -49,9 +67,9 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
         pending
     }
     @Synchronized fun peers(): List<Peer> = readableDatabase.rawQuery(
-        "SELECT id,name,pub,trusted,host,seen FROM peers ORDER BY trusted DESC,name", null).use { c ->
+        "SELECT id,name,pub,trusted,host,seen,files FROM peers ORDER BY trusted DESC,name", null).use { c ->
         buildList { while(c.moveToNext()) add(Peer(c.getString(0),c.getString(1),c.getString(2),
-            c.getInt(3) == 1,c.getString(4),c.getLong(5))) }
+            c.getInt(3) == 1,c.getString(4),c.getLong(5),c.getInt(6)==1)) }
     }
     @Synchronized fun discover(hello: Protocol.Hello, host: String, now: Long): Boolean {
         // Candidate admission is separate from approved peers. One source cannot reserve every slot.
@@ -74,10 +92,12 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
         val initial = ContentValues().apply {
             put("id",hello.id);put("name",hello.name);put("pub",hello.key)
             put("trusted",0);put("host",host);put("seen",now)
+            put("files",if(Protocol.FILE_CAPABILITY in hello.capabilities) 1 else 0)
         }
         db.insertWithOnConflict("peers",null,initial,SQLiteDatabase.CONFLICT_IGNORE)
         val updated = db.update("peers",ContentValues().apply {
             put("name",hello.name);put("host",host);put("seen",now)
+            put("files",if(Protocol.FILE_CAPABILITY in hello.capabilities) 1 else 0)
         },"id=? AND pub=?",arrayOf(hello.id,hello.key))
         return updated == 1
     }
@@ -179,6 +199,100 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
             buildList { while(c.moveToNext()) add(Letter(c.getString(0),c.getString(1),c.getString(2),c.getString(3),
                 c.getInt(4)==1,c.getLong(5),c.getString(6),c.getInt(7),c.getLong(8))) }
         }
+
+    @Synchronized fun createOutgoingTransfer(id:String,peer:Peer,files:List<FileMeta>,now:Long=System.currentTimeMillis()) {
+        require(peer.trusted && peer.fileCapable)
+        val db=writableDatabase;db.beginTransaction()
+        try {
+            db.execSQL("INSERT INTO file_transfers VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                arrayOf(id,peer.id,peer.name,0,"QUEUED",now,now,"","",0,0))
+            files.forEach { file -> db.execSQL("INSERT INTO transfer_files VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                arrayOf(id,file.fileId,file.name,file.mime,file.size,file.sha256,file.source,"","",0,digest(""),"PENDING")) }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+    @Synchronized fun createSelfTransfer(id:String,self:String,selfName:String,files:List<FileMeta>,now:Long=System.currentTimeMillis()) {
+        val db=writableDatabase;db.beginTransaction()
+        try {
+            db.execSQL("INSERT INTO file_transfers VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                arrayOf(id,self,selfName,1,"WAITING_ACCEPT",now,now,"","",0,0))
+            files.forEach { file -> db.execSQL("INSERT INTO transfer_files VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                arrayOf(id,file.fileId,file.name,file.mime,file.size,file.sha256,file.source,"","",0,digest(""),"PENDING")) }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+    @Synchronized fun receiveOffer(id:String,peer:Peer,files:List<FileMeta>,now:Long=System.currentTimeMillis()):Transfer {
+        require(peer.trusted)
+        val db=writableDatabase;db.beginTransaction()
+        try {
+            val old=db.rawQuery("SELECT 1 FROM file_transfers WHERE id=? AND peer=? AND incoming=1",arrayOf(id,peer.id)).use { it.moveToFirst() }
+            if(old) {
+                val existing=transferFiles(id)
+                require(existing.map { listOf(it.fileId,it.name,it.size.toString(),it.sha256) } ==
+                    files.map { listOf(it.fileId,it.name,it.size.toString(),it.sha256) })
+            } else {
+                db.execSQL("INSERT INTO file_transfers VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    arrayOf(id,peer.id,peer.name,1,"WAITING_ACCEPT",now,now,"","",0,0))
+                files.forEach { file -> db.execSQL("INSERT INTO transfer_files VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    arrayOf(id,file.fileId,file.name,file.mime,file.size,file.sha256,"","","",0,digest(""),"PENDING")) }
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        return transfer(id,peer.id,true)
+    }
+    @Synchronized fun transfer(id:String,peer:String,incoming:Boolean):Transfer = readableDatabase.rawQuery(
+        "SELECT id,peer,peer_name,incoming,state,created,updated,destination,error,attempts,next FROM file_transfers WHERE id=? AND peer=? AND incoming=?",
+        arrayOf(id,peer,if(incoming) "1" else "0")).use { c ->
+        check(c.moveToFirst());Transfer(c.getString(0),c.getString(1),c.getString(2),c.getInt(3)==1,c.getString(4),
+            c.getLong(5),c.getLong(6),c.getString(7),c.getString(8),c.getInt(9),c.getLong(10))
+    }
+    @Synchronized fun transfers(incoming:Boolean?=null):List<Transfer> {
+        val where=if(incoming==null) "" else " WHERE incoming="+if(incoming) "1" else "0"
+        return readableDatabase.rawQuery("SELECT id,peer,peer_name,incoming,state,created,updated,destination,error,attempts,next FROM file_transfers$where ORDER BY updated DESC",null).use { c ->
+            buildList { while(c.moveToNext()) add(Transfer(c.getString(0),c.getString(1),c.getString(2),c.getInt(3)==1,
+                c.getString(4),c.getLong(5),c.getLong(6),c.getString(7),c.getString(8),c.getInt(9),c.getLong(10))) }
+        }
+    }
+    @Synchronized fun transferFiles(id:String):List<TransferFile> = readableDatabase.rawQuery(
+        "SELECT transfer_id,file_id,name,mime,size,sha256,source,temp,final,offset,prefix,state FROM transfer_files WHERE transfer_id=? ORDER BY rowid",
+        arrayOf(id)).use { c -> buildList { while(c.moveToNext()) add(TransferFile(c.getString(0),c.getString(1),c.getString(2),
+            c.getString(3),c.getLong(4),c.getString(5),c.getString(6),c.getString(7),c.getString(8),c.getLong(9),c.getString(10),c.getString(11))) } }
+    @Synchronized fun acceptTransfer(id:String,peer:String,destination:String,temps:Map<String,String>) {
+        val db=writableDatabase;db.beginTransaction()
+        try {
+            val values=ContentValues().apply { put("state","TRANSFERRING");put("destination",destination);put("updated",System.currentTimeMillis());put("error","") }
+            check(db.update("file_transfers",values,"id=? AND peer=? AND incoming=1 AND state IN ('WAITING_ACCEPT','PAUSED')",arrayOf(id,peer))==1)
+            temps.forEach { (file,temp) -> db.update("transfer_files",ContentValues().apply { put("temp",temp) },
+                "transfer_id=? AND file_id=?",arrayOf(id,file)) }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+    @Synchronized fun setTransferState(id:String,peer:String,incoming:Boolean,state:String,error:String="",next:Long?=null) {
+        require(state in setOf("QUEUED","OFFERING","WAITING_ACCEPT","TRANSFERRING","PAUSED","FINALIZING","CANCEL_PENDING","COMPLETED","CANCELLED","DECLINED","FAILED"))
+        writableDatabase.update("file_transfers",ContentValues().apply {
+            put("state",state);put("error",error);put("updated",System.currentTimeMillis());if(next!=null) {
+                put("next",next);if(next==0L) put("attempts",0)
+            }
+        },"id=? AND peer=? AND incoming=?",arrayOf(id,peer,if(incoming) "1" else "0"))
+    }
+    @Synchronized fun updateFileProgress(id:String,fileId:String,offset:Long,prefix:String,state:String="TRANSFERRING",finalPath:String="") {
+        writableDatabase.update("transfer_files",ContentValues().apply {
+            put("offset",offset);put("prefix",prefix);put("state",state);if(finalPath.isNotEmpty()) put("final",finalPath)
+        },"transfer_id=? AND file_id=?",arrayOf(id,fileId))
+        writableDatabase.update("file_transfers",ContentValues().apply {
+            put("updated",System.currentTimeMillis());put("next",0);put("attempts",0);put("error","")
+        },"id=?",arrayOf(id))
+    }
+    @Synchronized fun dueTransfers(now:Long,limit:Int=2):List<Transfer> {
+        val due=readableDatabase.rawQuery("SELECT id,peer,peer_name,incoming,state,created,updated,destination,error,attempts,next FROM file_transfers WHERE incoming=0 AND state IN ('QUEUED','OFFERING','WAITING_ACCEPT','TRANSFERRING','PAUSED','CANCEL_PENDING') AND next<=? ORDER BY next,created LIMIT ?",
+            arrayOf(now.toString(),limit.coerceAtLeast(0).toString())).use { c -> buildList { while(c.moveToNext()) add(Transfer(c.getString(0),c.getString(1),c.getString(2),false,c.getString(4),c.getLong(5),c.getLong(6),c.getString(7),c.getString(8),c.getInt(9),c.getLong(10))) } }
+        due.forEach { item ->
+            val delay=(10000L*(1L shl item.attempts.coerceAtMost(5))).coerceAtMost(300000L)
+            writableDatabase.execSQL("UPDATE file_transfers SET attempts=attempts+1,next=? WHERE id=? AND peer=? AND incoming=0",
+                arrayOf(now+delay,item.id,item.peer))
+        }
+        return due
+    }
 }
 
 object Identity {

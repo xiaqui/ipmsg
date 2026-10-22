@@ -41,7 +41,7 @@ class MessengerService : Service() {
         init.execute {
             runCatching {
                 val store = Store(this)
-                val lan = LanEngine(this,store,Identity.load(),::notifyLetter)
+                val lan = LanEngine(this,store,Identity.load(),::notifyLetter,::notifyFileOffer)
                 synchronized(this) {
                     if(destroyed) { store.close(); return@execute }
                     db = store; engine = lan; lan.start()
@@ -60,6 +60,16 @@ class MessengerService : Service() {
                 .setSmallIcon(android.R.drawable.ic_dialog_email).setContentTitle("IP Messenger：手紙が届きました")
                 .setContentText("受信箱を開いて確認").setContentIntent(open).setAutoCancel(true).build())
         } catch(_: SecurityException) { }
+    }
+    private fun notifyFileOffer(name:String,transferId:String) {
+        if(!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
+        val open=PendingIntent.getActivity(this,3,
+            Intent(this,MainActivity::class.java).putExtra("files",true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        try { NotificationManagerCompat.from(this).notify(3,NotificationCompat.Builder(this,"letters")
+            .setSmallIcon(android.R.drawable.ic_menu_save).setContentTitle("$name からファイル")
+            .setContentText("開いて保存先を選んでください").setContentIntent(open).setAutoCancel(true).build())
+        } catch(_:SecurityException) { }
     }
     override fun onStartCommand(intent: Intent?,flags: Int,startId: Int): Int = START_STICKY
     override fun onBind(intent: Intent?): IBinder? = null
@@ -87,3 +97,4 @@ object MessengerNotifications {
         Intent(context,MainActivity::class.java).putExtra("inbox",inbox),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 }
+

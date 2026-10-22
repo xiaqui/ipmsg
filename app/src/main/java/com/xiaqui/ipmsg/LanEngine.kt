@@ -25,7 +25,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class LanEngine(private val context: Context, private val store: Store,
-    private val pair: KeyPair, private val notifyLetter: (Letter) -> Unit) {
+    private val pair: KeyPair, private val notifyLetter: (Letter) -> Unit,
+    notifyFileOffer:(String,String)->Unit = { _,_-> }) {
     private val running = AtomicBoolean(false)
     private val cm = context.getSystemService(ConnectivityManager::class.java)
     private val prefs = context.getSharedPreferences("settings",Context.MODE_PRIVATE)
@@ -49,6 +50,7 @@ class LanEngine(private val context: Context, private val store: Store,
     private val lanPrefixes = java.util.concurrent.ConcurrentHashMap<Network,Set<String>>()
     private val lanAddresses = java.util.concurrent.ConcurrentHashMap<Network,Set<String>>()
     private val networkReconcileGate = NetworkReconcileGate()
+    private val fileManager=FileTransferManager(context,store,{ scheduleTick() },notifyFileOffer)
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             val properties = cm.getLinkProperties(network)
@@ -339,6 +341,13 @@ class LanEngine(private val context: Context, private val store: Store,
                             runCatching { send(attempt.letter,attempt.peer,attempt.networks,attempt.offlineFallback) }
                         }
                     }
+                    store.dueTransfers(currentNow,2).forEach { transfer ->
+                        val peer=store.peers().find { it.id==transfer.peer&&it.trusted } ?: return@forEach
+                        val reachable=reachableNetworks(peer.host,activeNetworks)
+                        if(reachable.isNotEmpty()) fileManager.process(transfer,peer) { body ->
+                            exchangeFile(peer,reachable,body)
+                        }
+                    }
                 } finally { sending.set(false) }
             } } catch(_: java.util.concurrent.RejectedExecutionException) { sending.set(false) }
         }
@@ -390,15 +399,34 @@ class LanEngine(private val context: Context, private val store: Store,
         val peer = store.peers().find { it.id == id && it.trusted } ?: return
         diagnostics.tcpIncoming(peer.id)
         val body = Protocol.open(bytes,pair,Protocol.key(peer.key))
-        require(body.getString("type") == "TEXT")
-        val messageId = body.getString("id")
-        val text = body.getString("body")
-        val fresh = store.receive(messageId,peer.id,peer.name,text)
-        if(fresh) runCatching { notifyLetter(Letter(messageId,peer.id,peer.name,text,true,
-            System.currentTimeMillis(),"RECEIVED",0,0)) }
-        Protocol.write(DataOutputStream(socket.getOutputStream()),
-            Protocol.seal(JSONObject().put("type","ACK").put("id",messageId),pair,Protocol.key(peer.key)))
-        diagnostics.ackSent(peer.id)
+        val response=if(body.getString("type") == "TEXT") {
+            val messageId = body.getString("id")
+            val text = body.getString("body")
+            val fresh = store.receive(messageId,peer.id,peer.name,text)
+            if(fresh) runCatching { notifyLetter(Letter(messageId,peer.id,peer.name,text,true,
+                System.currentTimeMillis(),"RECEIVED",0,0)) }
+            diagnostics.ackSent(peer.id)
+            JSONObject().put("type","ACK").put("id",messageId)
+        } else fileManager.handle(peer,body)
+        Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(response,pair,Protocol.key(peer.key)))
+    }
+    private fun exchangeFile(peer:Peer,nets:List<Network>,body:JSONObject):JSONObject {
+        var failure:Throwable?=null
+        nets.forEach { network ->
+            if(!running.get()) throw IllegalStateException("stopped")
+            try {
+                val connection=network.socketFactory.createSocket();sockets.add(connection)
+                val timeout=deadlines.schedule({ runCatching { connection.close() } },8,TimeUnit.SECONDS)
+                try { connection.use { socket ->
+                    socket.soTimeout=5000;socket.connect(InetSocketAddress(peer.host,Protocol.PORT),3000)
+                    require(store.peers().any { it.id==peer.id&&it.trusted })
+                    Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(body,pair,Protocol.key(peer.key)))
+                    val answer=Protocol.open(Protocol.read(DataInputStream(socket.getInputStream())),pair,Protocol.key(peer.key))
+                    require(store.peers().any { it.id==peer.id&&it.trusted });return answer
+                } } finally { timeout.cancel(false);sockets.remove(connection) }
+            } catch(error:Throwable) { failure=error }
+        }
+        throw failure ?: java.io.IOException("no LAN route")
     }
     fun wake() { store.retry(); diagnostics.network("手動再探索","要求"); scheduleTick() }
     fun diagnosticReport(): String = diagnostics.report(

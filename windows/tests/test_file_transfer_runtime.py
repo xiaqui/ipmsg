@@ -1,0 +1,95 @@
+import hashlib
+import tempfile
+import unittest
+from pathlib import Path
+
+from ipmsg_windows.file_transfer import (CHUNK_BYTES, FileTransferCore, NoResponse,
+                                         accept_to_directory, queue_paths, valid_name)
+from ipmsg_windows.store import Store
+
+
+class FileTransferRuntimeTest(unittest.TestCase):
+    def stores(self, folder):
+        sender=Store(Path(folder)/"sender.sqlite");receiver=Store(Path(folder)/"receiver.sqlite")
+        sender_id="a"*64;receiver_id="b"*64
+        sender.discover(receiver_id,"receiver","key-b","192.168.1.2",1,True);sender.trust(receiver_id,True)
+        receiver.discover(sender_id,"sender","key-a","192.168.1.1",1,True);receiver.trust(sender_id,True)
+        return sender,receiver,sender_id,receiver_id
+
+    def test_streaming_offer_consent_resume_duplicate_and_complete(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sender,receiver,sender_id,receiver_id=self.stores(folder)
+            source=Path(folder)/"長い名前-資料.zip";payload=(b"0123456789abcdef"*5000)+b"tail"
+            source.write_bytes(payload)
+            transfer_id=queue_paths(sender,[receiver_id],[str(source)])[0]
+            sending=FileTransferCore(sender);receiving=FileTransferCore(receiver)
+            sender_peer=receiver.peers()[0];receiver_peer=sender.peers()[0]
+            def exchange(message):return receiving.handle(sender_peer,message)
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            self.assertEqual("OFFERING",sender.transfer(transfer_id,receiver_id,False).state)
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            incoming=receiver.transfer(transfer_id,sender_id,True)
+            self.assertEqual("WAITING_ACCEPT",incoming.state)
+            destination=Path(folder)/"received";destination.mkdir();accept_to_directory(receiver,incoming,str(destination))
+            for _ in range(20):
+                transfer=sender.transfer(transfer_id,receiver_id,False)
+                if transfer.state=="COMPLETED":break
+                sending.process(transfer,receiver_peer,exchange)
+            self.assertEqual("COMPLETED",sender.transfer(transfer_id,receiver_id,False).state)
+            self.assertEqual("COMPLETED",receiver.transfer(transfer_id,sender_id,True).state)
+            saved=next(destination.iterdir())
+            self.assertEqual(payload,saved.read_bytes())
+            self.assertEqual(hashlib.sha256(payload).hexdigest(),hashlib.sha256(saved.read_bytes()).hexdigest())
+            sender.db.close();receiver.db.close()
+
+    def test_metadata_path_limits_and_old_peer_gate(self):
+        self.assertFalse(valid_name("../evil"));self.assertFalse(valid_name("CON.txt"))
+        self.assertFalse(valid_name("tail. "));self.assertTrue(valid_name("資料.pdf"))
+        with tempfile.TemporaryDirectory() as folder:
+            store=Store(Path(folder)/"db.sqlite");peer="b"*64
+            store.discover(peer,"old","key","192.168.1.2",1,False);store.trust(peer,True)
+            source=Path(folder)/"zero.bin";source.write_bytes(b"")
+            with self.assertRaises(ValueError):queue_paths(store,[peer],[str(source)])
+            store.db.close()
+
+    def test_chunk_constant_keeps_plain_frame_bounded(self):
+        encoded=((CHUNK_BYTES+2)//3)*4
+        self.assertLess(encoded+4096,52_000)
+
+    def test_self_delivery_still_requires_destination_consent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=Store(Path(folder)/"self.sqlite");self_id="c"*64
+            source=Path(folder)/"自分用.pdf";source.write_bytes(b"self-file")
+            transfer_id=queue_paths(store,[self_id],[str(source)],self_id,"Windows")[0]
+            transfer=store.transfer(transfer_id,self_id,True)
+            self.assertEqual("WAITING_ACCEPT",transfer.state)
+            destination=Path(folder)/"saved";destination.mkdir()
+            accept_to_directory(store,transfer,str(destination))
+            self.assertEqual("COMPLETED",store.transfer(transfer_id,self_id,True).state)
+            self.assertEqual(b"self-file",(destination/"自分用.pdf").read_bytes())
+            store.db.close()
+
+    def test_cancel_is_terminal_on_both_sides(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sender,receiver,sender_id,receiver_id=self.stores(folder)
+            source=Path(folder)/"cancel.bin";source.write_bytes(b"x"*100)
+            transfer_id=queue_paths(sender,[receiver_id],[str(source)])[0]
+            sending=FileTransferCore(sender);receiving=FileTransferCore(receiver)
+            sender_peer=receiver.peers()[0];receiver_peer=sender.peers()[0]
+            exchange=lambda message:receiving.handle(sender_peer,message)
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            try:sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            except NoResponse:pass
+            receiver.transfer(transfer_id,sender_id,True)
+            receiver.set_transfer_state(transfer_id,sender_id,True,"DECLINED","CANCELLED")
+            answer=receiving.handle(sender_peer,{"type":"FILE_RESUME","transferId":transfer_id,
+                "fileId":receiver.transfer_files(transfer_id)[0].file_id,"offset":0,
+                "prefixSha256":hashlib.sha256(b"").hexdigest()})
+            self.assertEqual("CANCELLED",answer["code"])
+            sender.set_transfer_state(transfer_id,receiver_id,False,"CANCEL_PENDING","CANCELLED",0)
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            self.assertEqual("CANCELLED",sender.transfer(transfer_id,receiver_id,False).state)
+            sender.db.close();receiver.db.close()
+
+
+if __name__ == "__main__":unittest.main()

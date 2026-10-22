@@ -14,6 +14,7 @@ import psutil
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from . import protocol
+from .file_transfer import FileTransferCore, NoResponse
 from .store import Peer, Store
 
 
@@ -79,10 +80,12 @@ def _expire_connection(conn: socket.socket) -> None:
 class LanNode:
     def __init__(self, store: Store, private: rsa.RSAPrivateKey, name: str,
                  on_change: Callable[[], None] = lambda: None,
-                 on_letter: Callable[[str, str], None] = lambda _n, _b: None):
+                 on_letter: Callable[[str, str], None] = lambda _n, _b: None,
+                 on_file_offer: Callable[[str, str], None] = lambda _n, _t: None):
         self.store, self.private, self.name = store, private, name[:40]
         self.self_id = protocol.fingerprint(private.public_key())
         self.on_change, self.on_letter = on_change, on_letter
+        self.files = FileTransferCore(store,on_change,on_file_offer)
         self.stop_event = threading.Event()
         self.pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ipmsg")
         self.receivers = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ipmsg-rx")
@@ -121,7 +124,8 @@ class LanNode:
                 if not host_on_lan(source[0]): continue
                 hello = protocol.read_hello(data)
                 if hello.peer_id != self.self_id:
-                    self.store.discover(hello.peer_id, hello.name, hello.public_key, source[0], int(time.time()*1000))
+                    self.store.discover(hello.peer_id, hello.name, hello.public_key, source[0], int(time.time()*1000),
+                                        protocol.FILE_CAPABILITY in hello.capabilities)
                     self.on_change()
             except socket.timeout: pass
             except (OSError, ValueError, KeyError): pass
@@ -171,15 +175,17 @@ class LanNode:
                 peer = next((p for p in self.store.peers() if p.peer_id == sender and p.trusted), None)
                 if not peer: return
                 body = protocol.open_frame(frame, self.private, protocol.load_public(peer.public_key))
-                if body.get("type") != "TEXT": return
-                message_id, text = body["id"], body["body"]
-                inserted = self.store.receive(message_id, sender, peer.name, text)
-                # Persist before ACK. Duplicates with identical body are ACKed again.
-                ack = protocol.seal({"type":"ACK", "id":message_id}, self.private,
-                                    protocol.load_public(peer.public_key))
-                conn.sendall(protocol.pack_frame(ack))
-                if inserted: self.on_letter(peer.name, text)
+                if body.get("type") == "TEXT":
+                    message_id, text = body["id"], body["body"]
+                    inserted = self.store.receive(message_id, sender, peer.name, text)
+                    response={"type":"ACK", "id":message_id}
+                    if inserted:self.on_letter(peer.name,text)
+                else:
+                    response=self.files.handle(peer,body)
+                reply = protocol.seal(response,self.private,protocol.load_public(peer.public_key))
+                conn.sendall(protocol.pack_frame(reply))
                 self.on_change()
+            except NoResponse:return
             except (OSError, EOFError, ValueError, KeyError): return
 
     def _send(self, letter, peer: Peer) -> None:
@@ -200,6 +206,20 @@ class LanNode:
             pass
         self.on_change()
 
+    def _exchange_file(self, peer: Peer, fields: dict) -> dict:
+        if not host_on_lan(peer.host): raise OSError("peer is outside active LAN")
+        current=next((p for p in self.store.peers() if p.peer_id==peer.peer_id and p.trusted),None)
+        if current is None:raise ValueError("UNTRUSTED")
+        with socket.create_connection((peer.host,protocol.PORT),timeout=3) as conn:
+            conn.settimeout(5)
+            frame=protocol.seal(fields,self.private,protocol.load_public(peer.public_key))
+            conn.sendall(protocol.pack_frame(frame))
+            answer=protocol.open_frame(protocol.recv_frame(conn),self.private,
+                                       protocol.load_public(peer.public_key))
+        if not any(p.peer_id==peer.peer_id and p.trusted for p in self.store.peers()):
+            raise ValueError("UNTRUSTED")
+        return answer
+
     def _clock_loop(self) -> None:
         next_hello = 0.0
         while not self.stop_event.wait(1):
@@ -209,5 +229,9 @@ class LanNode:
             for letter in self.store.claim_pending(now,16):
                 peer = peers.get(letter.peer_id)
                 if peer: self.pool.submit(self._send, letter, peer)
+            for transfer in self.store.due_transfers(now,2):
+                peer=peers.get(transfer.peer_id)
+                if peer:self.pool.submit(self.files.process,transfer,peer,
+                                         lambda fields,p=peer:self._exchange_file(p,fields))
 
 
