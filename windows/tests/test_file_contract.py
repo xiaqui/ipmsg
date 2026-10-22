@@ -18,7 +18,7 @@ def valid_metadata(value):
 
 class FileContractTest(unittest.TestCase):
     def test_shared_metadata_vectors(self):
-        vector=json.loads((Path(__file__).parents[2]/"app/src/test/resources/file-transfer-v1.json").read_text())
+        vector=json.loads((Path(__file__).parents[2]/"app/src/test/resources/file-transfer-v1.json").read_text(encoding="utf-8"))
         for case in vector["valid"]:self.assertTrue(valid_metadata(case),case)
         for case in vector["invalid"]:self.assertFalse(valid_metadata(case),case)
         self.assertLess(vector["chunkBytes"]*4//3+2048,52000)

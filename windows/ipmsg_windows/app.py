@@ -179,7 +179,7 @@ def main() -> int:
                         store.delete_letter(letter)
                         bridge.completed.emit(lambda:(reload(),delete.setEnabled(True)))
                     except Exception:
-                        bridge.completed.emit(lambda:QMessageBox.warning(self,"削除","削除できませんでした"))
+                        bridge.completed.emit(lambda:(delete.setEnabled(True),QMessageBox.warning(self,"削除","削除できませんでした")))
                 threading.Thread(target=remove,daemon=True).start()
             delete.clicked.connect(delete_current);reload();dialog.resize(480,500);dialog.exec()
         def closeEvent(self,event): event.ignore();self.hide();tray.showMessage("IP Messenger","受信を続けています")
