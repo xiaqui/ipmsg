@@ -139,4 +139,70 @@ class FileTransferRuntimeTest(unittest.TestCase):
             sender.db.close();receiver.db.close()
 
 
+    def test_corrupted_temp_file_is_rejected_at_final_completion(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sender,receiver,sender_id,receiver_id=self.stores(folder)
+            source=Path(folder)/"original.bin";source.write_bytes(b"A"*128)
+            transfer_id=queue_paths(sender,[receiver_id],[str(source)])[0]
+            sending=FileTransferCore(sender);receiving=FileTransferCore(receiver)
+            sender_peer=receiver.peers()[0];receiver_peer=sender.peers()[0]
+            exchange=lambda message:receiving.handle(sender_peer,message)
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            destination=Path(folder)/"received";destination.mkdir()
+            accept_to_directory(receiver,receiver.transfer(transfer_id,sender_id,True),str(destination))
+            for _ in range(8):
+                file=sender.transfer_files(transfer_id)[0]
+                if file.offset==file.size:break
+                sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            target=receiver.transfer_files(transfer_id)[0]
+            self.assertEqual(target.size,target.offset)
+            Path(target.temp).write_bytes(b"B"*target.size)
+            answer=receiving.handle(sender_peer,{"type":"FILE_COMPLETE","transferId":transfer_id,
+                "fileId":target.file_id,"size":target.size,"sha256":target.sha256})
+            self.assertEqual("HASH_MISMATCH",answer["code"])
+            self.assertFalse((destination/"original.bin").exists())
+            sender.db.close();receiver.db.close()
+
+    def test_cancel_during_caps_response_cannot_restart_transfer(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sender,receiver,sender_id,receiver_id=self.stores(folder)
+            source=Path(folder)/"cancel-race.bin";source.write_bytes(b"data")
+            transfer_id=queue_paths(sender,[receiver_id],[str(source)])[0]
+            core=FileTransferCore(sender);receiver_peer=sender.peers()[0]
+            def cancel_while_waiting(message):
+                sender.set_transfer_state(transfer_id,receiver_id,False,"CANCEL_PENDING","CANCELLED",0)
+                return {"type":"CAPS","requestId":message["requestId"]}
+            core.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,cancel_while_waiting)
+            self.assertEqual("CANCEL_PENDING",sender.transfer(transfer_id,receiver_id,False).state)
+            sender.db.close();receiver.db.close()
+
+    def test_lost_complete_ack_after_restart_can_finish(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sender,receiver,sender_id,receiver_id=self.stores(folder)
+            source=Path(folder)/"finished.bin";source.write_bytes(b"finished")
+            transfer_id=queue_paths(sender,[receiver_id],[str(source)])[0]
+            sending=FileTransferCore(sender);receiving=FileTransferCore(receiver)
+            sender_peer=receiver.peers()[0];receiver_peer=sender.peers()[0]
+            exchange=lambda message:receiving.handle(sender_peer,message)
+            destination=Path(folder)/"received";destination.mkdir()
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            accept_to_directory(receiver,receiver.transfer(transfer_id,sender_id,True),str(destination))
+            for _ in range(8):
+                current=sender.transfer_files(transfer_id)[0]
+                if current.offset==current.size:break
+                sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            def lost_complete_ack(message):
+                self.assertEqual("FILE_COMPLETE",message["type"])
+                receiving.handle(sender_peer,message)
+                raise EOFError("ACK lost")
+            sending.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,lost_complete_ack)
+            restarted=FileTransferCore(sender)
+            restarted.process(sender.transfer(transfer_id,receiver_id,False),receiver_peer,exchange)
+            self.assertEqual("COMPLETED",sender.transfer(transfer_id,receiver_id,False).state)
+            sender.db.close();receiver.db.close()
+
+
+
 if __name__ == "__main__":unittest.main()
