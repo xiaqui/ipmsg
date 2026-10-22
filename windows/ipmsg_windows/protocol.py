@@ -19,6 +19,7 @@ PORT = 42124
 MAX_FRAME = 80_000
 MAX_TEXT = 8_192
 MAX_PLAIN = 52_000
+FILE_CAPABILITY = "file-transfer/1"
 MESSAGE_ID = re.compile(r"[0-9a-f-]{36}\Z")
 PEER_ID = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -70,12 +71,14 @@ class Hello:
     peer_id: str
     name: str
     public_key: str
+    capabilities: frozenset[str] = frozenset()
 
 
 def make_hello(name: str, private: rsa.RSAPrivateKey, now_ms: int | None = None) -> bytes:
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
     public = private.public_key()
-    body = _json({"v": 1, "name": name[:40], "key": _b64(public_der(public)), "time": now_ms})
+    body = _json({"v": 1, "name": name[:40], "key": _b64(public_der(public)), "time": now_ms,
+                  "caps": [FILE_CAPABILITY]})
     return _json({"body": body, "sig": sign(body, private)}).encode()
 
 
@@ -91,7 +94,11 @@ def read_hello(packet: bytes, now_ms: int | None = None) -> Hello:
     public = load_public(data["key"])
     if not verify(body, outer["sig"], public):
         raise ValueError("invalid discovery signature")
-    return Hello(fingerprint(public), str(data["name"])[:40], _b64(public_der(public)))
+    caps = data.get("caps", [])
+    if not isinstance(caps, list) or any(not isinstance(item, str) for item in caps):
+        raise ValueError("invalid capabilities")
+    return Hello(fingerprint(public), str(data["name"])[:40], _b64(public_der(public)),
+                 frozenset(caps[:16]))
 
 
 def seal(fields: dict[str, Any], private: rsa.RSAPrivateKey, recipient: rsa.RSAPublicKey,
@@ -176,4 +183,5 @@ def recv_frame(sock: Any) -> bytes:
 
 def valid_text(text: str) -> bool:
     return bool(text.strip()) and len(text.encode()) <= MAX_TEXT
+
 

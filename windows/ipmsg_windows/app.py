@@ -37,8 +37,8 @@ def main() -> int:
     from PySide6.QtCore import QObject, QSettings, Qt, Signal
     from PySide6.QtNetwork import QLocalServer, QLocalSocket
     from PySide6.QtGui import QAction
-    from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QHBoxLayout, QLabel,
-        QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QStyle,
+    from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLabel,
+        QInputDialog, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QStyle,
         QSystemTrayIcon, QTextEdit, QVBoxLayout)
     from .identity import default_data_dir, load_or_create
     from .network import LanNode
@@ -61,6 +61,7 @@ def main() -> int:
     class Bridge(QObject):
         changed = Signal()
         arrived = Signal(str, str)
+        fileOffer = Signal(str, str)
         completed = Signal(object)
 
     bridge = Bridge()
@@ -79,8 +80,10 @@ def main() -> int:
             self_button = QPushButton("📝 自分宛て"); root.addWidget(all_button); root.addWidget(self_button)
             self.body = QTextEdit(); self.body.setPlaceholderText("本文（UTF-8で8192バイトまで）"); root.addWidget(self.body)
             send = QPushButton("選択した端末へ送る"); root.addWidget(send)
+            send_files = QPushButton("ファイルを選んで送る");root.addWidget(send_files)
             row = QHBoxLayout(); inbox=QPushButton("受信箱"); outbox=QPushButton("送信履歴")
-            approve=QPushButton("端末を承認 / 解除"); row.addWidget(inbox);row.addWidget(outbox);row.addWidget(approve);root.addLayout(row)
+            approve=QPushButton("端末を承認 / 解除"); files=QPushButton("ファイル転送")
+            row.addWidget(inbox);row.addWidget(outbox);row.addWidget(files);row.addWidget(approve);root.addLayout(row)
             self.device_name=QLineEdit(str(settings.value("deviceName",os.environ.get("COMPUTERNAME","Windows")))[:40])
             self.device_name.setPlaceholderText("この端末の名前");root.addWidget(self.device_name)
             save_name=QPushButton("端末名を保存");save_name.clicked.connect(self.save_name);root.addWidget(save_name)
@@ -88,6 +91,7 @@ def main() -> int:
             shell=__import__("PySide6.QtWidgets",fromlist=["QWidget"]).QWidget();shell.setLayout(root);self.setCentralWidget(shell)
             all_button.clicked.connect(lambda:self.select_destination([p.peer_id for p in store.peers() if p.trusted]+[self_id], "全端末（自分を含む）"))
             self_button.clicked.connect(lambda:self.select_destination([self_id], "自分宛て"));send.clicked.connect(self.send_selected)
+            send_files.clicked.connect(self.pick_files);files.clicked.connect(self.show_transfers)
             approve.clicked.connect(self.toggle_trust);inbox.clicked.connect(lambda:self.show_letters(True));outbox.clicked.connect(lambda:self.show_letters(False))
             self.refresh()
         def refresh(self):
@@ -132,6 +136,24 @@ def main() -> int:
         def send_selected(self):
             ids = self.recipients if self.recipients is not None else [i.data(Qt.UserRole) for i in self.peers.selectedItems()]
             self.send_to(ids)
+        def pick_files(self):
+            ids=[i.data(Qt.UserRole) for i in self.peers.selectedItems()]
+            remote=[ident for ident in ids if ident!=self_id]
+            if not ids:
+                QMessageBox.warning(self,"ファイル送信","宛先を選んでください");return
+            unsupported=[p.name for p in store.peers() if p.peer_id in remote and not p.file_capable]
+            if unsupported:
+                QMessageBox.warning(self,"ファイル送信","ファイル転送非対応: "+"、".join(unsupported));return
+            paths,_=QFileDialog.getOpenFileNames(self,"送るファイルを選択")
+            if not paths:return
+            def prepare():
+                try:
+                    from .file_transfer import queue_paths
+                    queue_paths(store,ids,paths,self_id,node.name)
+                    bridge.completed.emit(lambda:(self.refresh(),QMessageBox.information(self,"ファイル送信","転送を開始しました")))
+                except Exception as error:
+                    bridge.completed.emit(lambda e=str(error):QMessageBox.warning(self,"ファイル送信",e))
+            threading.Thread(target=prepare,daemon=True).start()
         def toggle_trust(self):
             items=self.peers.selectedItems()
             if len(items)!=1: return
@@ -182,6 +204,65 @@ def main() -> int:
                         bridge.completed.emit(lambda:(delete.setEnabled(True),QMessageBox.warning(self,"削除","削除できませんでした")))
                 threading.Thread(target=remove,daemon=True).start()
             delete.clicked.connect(delete_current);reload();dialog.resize(480,500);dialog.exec()
+        def show_transfers(self):
+            dialog=QDialog(self);dialog.setWindowTitle("ファイル転送");layout=QVBoxLayout(dialog)
+            listing=QListWidget();layout.addWidget(listing);details=QTextEdit();details.setReadOnly(True);layout.addWidget(details)
+            transfers=[]
+            def reload():
+                transfers[:]=store.transfers();listing.clear()
+                for transfer in transfers:
+                    direction="受信" if transfer.incoming else "送信"
+                    listing.addItem(f"{direction} {transfer.peer_name} [{transfer.state}] "+
+                                    ", ".join(f.name for f in store.transfer_files(transfer.transfer_id)))
+            def current():
+                row=listing.currentRow();return transfers[row] if 0<=row<len(transfers) else None
+            def show_detail(_row):
+                transfer=current()
+                if not transfer:details.clear();return
+                lines=[]
+                for file in store.transfer_files(transfer.transfer_id):
+                    percent=100 if file.size==0 and file.state=="COMPLETED" else (file.offset*100//max(1,file.size))
+                    lines.append(f"{file.name}\n{file.offset}/{file.size} bytes ({percent}%) {file.state}")
+                details.setPlainText("\n\n".join(lines)+(f"\n\nエラー: {transfer.error}" if transfer.error else ""))
+            listing.currentRowChanged.connect(show_detail)
+            controls=QHBoxLayout();accept=QPushButton("受信して保存先を選択");decline=QPushButton("拒否 / 取消")
+            open_file=QPushButton("完了ファイルを開く")
+            controls.addWidget(accept);controls.addWidget(decline);controls.addWidget(open_file);layout.addLayout(controls)
+            def accept_current():
+                transfer=current()
+                if not transfer or not transfer.incoming or transfer.state not in ("WAITING_ACCEPT","PAUSED"):return
+                destination=QFileDialog.getExistingDirectory(dialog,"保存先を選択")
+                if not destination:return
+                accept.setEnabled(False)
+                def prepare():
+                    try:
+                        from .file_transfer import accept_to_directory
+                        accept_to_directory(store,transfer,destination)
+                        bridge.completed.emit(lambda:(reload(),self.refresh(),accept.setEnabled(True)))
+                    except Exception as error:
+                        bridge.completed.emit(lambda e=str(error):(accept.setEnabled(True),QMessageBox.warning(dialog,"受信できません",e)))
+                threading.Thread(target=prepare,daemon=True).start()
+            def decline_current():
+                transfer=current()
+                if not transfer or transfer.state in ("COMPLETED","CANCELLED","DECLINED"):return
+                if QMessageBox.question(dialog,"転送を中止","この転送を取り消しますか？")!=QMessageBox.Yes:return
+                store.set_transfer_state(transfer.transfer_id,transfer.peer_id,transfer.incoming,
+                                         "DECLINED" if transfer.incoming else "CANCEL_PENDING","CANCELLED",0)
+                reload();self.refresh()
+            accept.clicked.connect(accept_current);decline.clicked.connect(decline_current)
+            def open_current():
+                transfer=current()
+                if not transfer or not transfer.incoming:return
+                available=[f for f in store.transfer_files(transfer.transfer_id) if f.state=="COMPLETED" and f.final]
+                if not available:return
+                names=[f.name for f in available]
+                chosen,ok=QInputDialog.getItem(dialog,"完了ファイルを開く","ファイル",names,0,False)
+                if ok:
+                    target=next(f.final for f in available if f.name==chosen)
+                    try:os.startfile(target)
+                    except OSError as error:QMessageBox.warning(dialog,"開けません",str(error))
+            open_file.clicked.connect(open_current)
+            reload();dialog.resize(620,520);dialog.exec()
         def closeEvent(self,event): event.ignore();self.hide();tray.showMessage("IP Messenger","受信を続けています")
 
     window=Window(); tray=QSystemTrayIcon(window);tray.setToolTip("IP Messenger")
@@ -193,8 +274,9 @@ def main() -> int:
     tray.activated.connect(lambda reason: reveal_window() if reason == QSystemTrayIcon.Trigger else None)
     bridge.changed.connect(window.refresh)
     bridge.arrived.connect(lambda n,b:tray.showMessage(f"{n} から手紙",b[:120]))
+    bridge.fileOffer.connect(lambda n,_t:tray.showMessage(f"{n} からファイル", "アプリを開いて保存先を選んでください"))
     node=LanNode(store,private,str(settings.value("deviceName",os.environ.get("COMPUTERNAME","Windows")))[:40],
-                 bridge.changed.emit,bridge.arrived.emit)
+                 bridge.changed.emit,bridge.arrived.emit,bridge.fileOffer.emit)
     def activate_existing():
         connection=instance_server.nextPendingConnection()
         if connection: connection.waitForReadyRead(100); connection.deleteLater()

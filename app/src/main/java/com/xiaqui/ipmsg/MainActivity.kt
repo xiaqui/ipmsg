@@ -16,6 +16,7 @@ import android.widget.*
 import java.text.DateFormat
 import java.util.Date
 import java.security.KeyPair
+import android.net.Uri
 
 class MainActivity : Activity() {
     private lateinit var store: Store
@@ -31,6 +32,8 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val prefs by lazy { getSharedPreferences("settings",MODE_PRIVATE) }
     private var rendered = ""
+    private var pendingTreeTransfer: Transfer? = null
+    private val fileManager by lazy { FileTransferManager(applicationContext,store,{ handler.post { rendered="";renderPeers() } },{ _,_-> }) }
     private val refresh = object : Runnable {
         override fun run() { renderPeers(); handler.postDelayed(this,2000) }
     }
@@ -74,11 +77,14 @@ class MainActivity : Activity() {
             inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         };root.addView(composer)
         root.addView(button("宛先を確認して送信") { confirmSend() })
+        root.addView(button("ファイルを選んで送信") { pickFiles() })
         root.addView(button("受信箱") { history(true) })
         root.addView(button("送信履歴・保留") { history(false) })
+        root.addView(button("ファイル転送") { fileTransfers() })
         root.addView(button("設定・端末承認") { settings() })
         root.addView(button("LAN診断") { showLanDiagnostics() })
         if(intent.getBooleanExtra("inbox",false)) history(true)
+        if(intent.getBooleanExtra("files",false)) fileTransfers()
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putStringArrayList("selected",ArrayList(selected))
@@ -149,6 +155,81 @@ class MainActivity : Activity() {
                     .onSuccess { composer.setText("");toast("送信履歴に保存しました。到着はACK受信後に表示します") }
                     .onFailure { toast("保存できませんでした。宛先と空き容量を確認してください") }
             }.show()
+    }
+    private fun pickFiles() {
+        val targets=selected.toList()
+        if(targets.isEmpty()) { toast("宛先を選んでください");return }
+        val peers=store.peers().associateBy { it.id }
+        val unsupported=targets.filter { it!=self }.mapNotNull { peers[it] }.filter { !it.fileCapable }.map { it.name }
+        if(unsupported.isNotEmpty()) { toast("ファイル転送非対応: "+unsupported.joinToString("、"));return }
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE);type="*/*";putExtra(Intent.EXTRA_ALLOW_MULTIPLE,true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        },20)
+    }
+    override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?) {
+        super.onActivityResult(requestCode,resultCode,data)
+        if(resultCode!=RESULT_OK||data==null)return
+        if(requestCode==20) {
+            val uris=buildList<Uri> {
+                data.clipData?.let { clip -> for(index in 0 until clip.itemCount) add(clip.getItemAt(index).uri) }
+                    ?:data.data?.let(::add)
+            }.distinct()
+            if(uris.isEmpty()) return
+            uris.forEach { uri -> runCatching { contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+            val targets=selected.toSet()
+            Thread {
+                val result=runCatching { fileManager.queue(targets,fileManager.describe(uris),self,name()) }
+                handler.post { if(result.isSuccess) toast("ファイル転送を開始しました")
+                    else toast("ファイルを送信できません: "+result.exceptionOrNull()?.message.orEmpty()) }
+            }.start()
+        } else if(requestCode==21) {
+            val transfer=pendingTreeTransfer ?: return;val tree=data.data ?: return
+            runCatching { contentResolver.takePersistableUriPermission(tree,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+            runCatching { fileManager.accept(transfer,tree) }
+                .onSuccess { toast("受信を開始しました") }.onFailure { toast("保存先を使用できません: "+it.message.orEmpty()) }
+            pendingTreeTransfer=null;fileTransfers()
+        }
+    }
+    private fun fileTransfers() {
+        val transfers=store.transfers()
+        val labels=transfers.map { transfer ->
+            val direction=if(transfer.incoming) "受信" else "送信"
+            val files=store.transferFiles(transfer.id)
+            val done=files.sumOf { it.offset };val total=files.sumOf { it.size }
+            "$direction ${transfer.peerName} [${transfer.state}]\n${files.joinToString("、") { it.name }}\n$done / $total bytes"+
+                if(transfer.error.isEmpty()) "" else "\n${transfer.error}"
+        }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("ファイル転送").setItems(labels) { _,index -> showTransfer(transfers[index]) }
+            .setNegativeButton("閉じる",null).show()
+    }
+    private fun showTransfer(transfer:Transfer) {
+        val files=store.transferFiles(transfer.id)
+        val message=files.joinToString("\n\n") { file ->
+            val percent=if(file.size==0L&&file.state=="COMPLETED") 100 else file.offset*100/maxOf(1,file.size)
+            "${file.name}\n${file.offset}/${file.size} bytes（$percent%） ${file.state}"
+        }+(if(transfer.error.isEmpty()) "" else "\n\nエラー: ${transfer.error}")
+        val builder=AlertDialog.Builder(this).setTitle(transfer.peerName).setMessage(message).setNegativeButton("閉じる",null)
+        if(transfer.incoming&&transfer.state in setOf("WAITING_ACCEPT","PAUSED")) builder.setPositiveButton("受信して保存先を選択") { _,_ ->
+            pendingTreeTransfer=transfer
+            startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            },21)
+        }
+        if(transfer.state !in setOf("COMPLETED","CANCELLED","DECLINED")) builder.setNeutralButton("拒否／取消") { _,_ ->
+            AlertDialog.Builder(this).setTitle("転送を中止").setMessage("この転送を取り消しますか？")
+                .setNegativeButton("戻る",null).setPositiveButton("中止") { _,_ -> fileManager.decline(transfer);toast("中止しました") }.show()
+        } else if(transfer.incoming&&transfer.state=="COMPLETED"&&files.any { it.finalPath.isNotEmpty() })
+            builder.setPositiveButton("完了ファイルを選んで開く") { _,_ ->
+                val completed=files.filter { it.finalPath.isNotEmpty() }
+                AlertDialog.Builder(this).setTitle("開くファイル").setItems(completed.map { it.name }.toTypedArray()) { _,index ->
+                    val file=completed[index]
+                    runCatching { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(file.finalPath),file.mime)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { toast("対応するアプリがありません") }
+                }.setNegativeButton("閉じる",null).show()
+            }
+        builder.show()
     }
     private fun fingerprint(id: String) = id.chunked(4).joinToString(" ")
     private fun approve(peer: Peer) {

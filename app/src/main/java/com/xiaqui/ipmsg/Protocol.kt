@@ -22,6 +22,7 @@ object Protocol {
     const val PORT = 42124
     const val MAX_FRAME = 80000
     const val MAX_TEXT = 8192
+    const val FILE_CAPABILITY = "file-transfer/1"
     private val random = SecureRandom()
     fun encode(bytes: ByteArray): String = Base64.encodeToString(bytes, Base64.NO_WRAP)
     fun decode(text: String): ByteArray = Base64.decode(text, Base64.NO_WRAP)
@@ -43,11 +44,13 @@ object Protocol {
     }.getOrDefault(false)
     fun hello(name: String, pair: KeyPair, now: Long): ByteArray {
         val body = JSONObject().put("v", 1).put("name", name.take(40))
-            .put("key", encode(pair.public.encoded)).put("time", now).toString()
+            .put("key", encode(pair.public.encoded)).put("time", now)
+            .put("caps",org.json.JSONArray().put(FILE_CAPABILITY)).toString()
         return JSONObject().put("body", body).put("sig", sign(body, pair.private))
             .toString().toByteArray(Charsets.UTF_8)
     }
-    data class Hello(val id: String, val name: String, val key: String)
+    data class Hello(val id: String, val name: String, val key: String,
+        val capabilities: Set<String> = emptySet())
     class HelloValidationException(val stage: String, cause: Throwable? = null) :
         IllegalArgumentException(stage,cause)
     fun readHello(bytes: ByteArray, now: Long): Hello {
@@ -68,7 +71,12 @@ object Protocol {
             stage = "署名"
             if(!verify(body, packet.getString("sig"), publicKey)) throw HelloValidationException(stage)
             stage = "端末名"
-            return Hello(id(publicKey), data.getString("name").take(40), encode(publicKey.encoded))
+            val caps=mutableSetOf<String>()
+            data.optJSONArray("caps")?.let { values ->
+                require(values.length()<=16)
+                for(index in 0 until values.length()) caps.add(values.getString(index))
+            }
+            return Hello(id(publicKey), data.getString("name").take(40), encode(publicKey.encoded),caps)
         } catch(e: HelloValidationException) {
             throw e
         } catch(e: Exception) {
@@ -136,3 +144,4 @@ object Protocol {
     fun validText(body: String) = body.isNotBlank() && body.toByteArray(Charsets.UTF_8).size <= MAX_TEXT
     fun validMessageId(id: String) = id.matches(Regex("[0-9a-f-]{36}"))
 }
+
