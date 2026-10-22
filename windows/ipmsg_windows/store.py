@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
+import hashlib
 import threading
 import time
 import uuid
@@ -49,6 +50,8 @@ class Store:
           attempts INTEGER NOT NULL DEFAULT 0,next INTEGER NOT NULL DEFAULT 0,
           PRIMARY KEY(id,peer,incoming));
         CREATE INDEX IF NOT EXISTS pending_due ON letters(incoming,state,next,created);
+        CREATE TABLE IF NOT EXISTS deleted_received(id TEXT NOT NULL,peer TEXT NOT NULL,
+          digest TEXT NOT NULL,PRIMARY KEY(id,peer));
         """)
 
     @synchronized
@@ -108,6 +111,11 @@ class Store:
             raise ValueError("untrusted sender")
         now = int(time.time() * 1000) if now is None else now
         with self.db:
+            deleted=self.db.execute("SELECT digest FROM deleted_received WHERE id=? AND peer=?",
+                                    (message_id,peer_id)).fetchone()
+            if deleted:
+                if deleted[0]!=hashlib.sha256(body.encode()).hexdigest(): raise ValueError("message id collision")
+                return False
             old = self.db.execute("SELECT body FROM letters WHERE id=? AND peer=? AND incoming=1",
                                   (message_id, peer_id)).fetchone()
             if old:
@@ -116,6 +124,22 @@ class Store:
             self.db.execute("INSERT INTO letters VALUES(?,?,?,?,?,?,?,?,?)",
                             (message_id, peer_id, name, body, 1, now, "RECEIVED", 0, 0))
         return True
+
+    @synchronized
+    def delete_letter(self, letter: Letter) -> None:
+        with self.db:
+            if letter.incoming:
+                self.db.execute("INSERT OR IGNORE INTO deleted_received VALUES(?,?,?)",
+                    (letter.message_id,letter.peer_id,hashlib.sha256(letter.body.encode()).hexdigest()))
+            self.db.execute("DELETE FROM letters WHERE id=? AND peer=? AND incoming=?",
+                            (letter.message_id,letter.peer_id,int(letter.incoming)))
+
+    @synchronized
+    def write_if_pending(self, letter: Letter, action) -> bool:
+        row=self.db.execute("SELECT 1 FROM letters WHERE id=? AND peer=? AND incoming=0 AND state='PENDING'",
+                            (letter.message_id,letter.peer_id)).fetchone()
+        if row: action()
+        return bool(row)
 
     @synchronized
     def letters(self, incoming: bool | None = None) -> list[Letter]:
@@ -159,4 +183,5 @@ class Store:
     def delivered(self, message_id: str, peer_id: str) -> None:
         with self.db: self.db.execute("UPDATE letters SET state='DELIVERED' "
           "WHERE id=? AND peer=? AND incoming=0", (message_id, peer_id))
+
 

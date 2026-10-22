@@ -1,3 +1,12 @@
+# M6-1 進捗（2026-10-23 JST）
+
+- 基準main: `f8e34783ec4842a9d97f40108b0070fd9386624b`。履歴本文コピー/個別削除、Android詳細ボタン、Windows自端末行/選択、共通ファイル契約とオフライン試験基盤を実装中。
+- 削除は端末内1記録のみ。保留writeと削除を直列化。受信削除は本文を残さずdigest tombstoneを保持し再送による復活と改変を拒否する。既にネットワークへ送った本文の遠隔取消はできない。
+- ローカル: Python17成功、Android生成vector1件はCI待ち。Ruff成功。独立レビューP1なし、P2のGUI停止/試験不足/契約サンプル不足を修正中。
+- 未完了: Android CI/WindowsパッケージCI、最終レビュー判定、PRマージ、main由来両Release再取得SHA/サイズ/署名照合、実機検収。
+- ファイル送受信本体はM6-2未実装。契約正本はFILE_TRANSFER_V1_CONTRACT_JA.md。
+
+---
 # M5 Windows版 進捗（2026-10-19 UTC）
 
 - 状態: 実装ブランチ作成中。PR、独立レビュー、CI、mainマージ、Release配送は未完了。
@@ -212,4 +221,5 @@ Android6 Z3TC、Android7 Z4T、Android8 XZ1 Compact、Android14 Ace IIIでの導
 初回は同じWi-Fiで、双方の設定の「常駐受信を有効にする」をON、端末名を設定し、相手の設定にある指紋全桁を直接比較して双方で承認する。
 詳細はTESTING.md。ゲストWi-Fiの端末間分離、IPv6専用LAN、時計の大きなずれ、OS省電力の制約に注意する。
 M3の実装はここで停止。配送／実機検収以外でM4以降に進むには別の明示指示を待つ。
+
 

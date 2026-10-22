@@ -189,7 +189,8 @@ class LanNode:
                 conn.settimeout(5)
                 frame = protocol.seal({"type":"TEXT", "id":letter.message_id, "body":letter.body},
                                       self.private, protocol.load_public(peer.public_key))
-                conn.sendall(protocol.pack_frame(frame))
+                if not self.store.write_if_pending(letter,lambda:conn.sendall(protocol.pack_frame(frame))):
+                    return
                 ack = protocol.open_frame(protocol.recv_frame(conn), self.private,
                                           protocol.load_public(peer.public_key))
                 if ack.get("type") != "ACK" or ack.get("id") != letter.message_id:
@@ -208,4 +209,5 @@ class LanNode:
             for letter in self.store.claim_pending(now,16):
                 peer = peers.get(letter.peer_id)
                 if peer: self.pool.submit(self._send, letter, peer)
+
 

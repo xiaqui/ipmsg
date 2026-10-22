@@ -19,13 +19,35 @@ data class Letter(val id: String, val peer: String, val name: String, val body: 
     val incoming: Boolean, val created: Long, val state: String, val attempts: Int, val next: Long)
 
 /** All delivery transitions commit synchronously before an ACK is emitted. */
-class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ipmsg.db", null, 1) {
+class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ipmsg.db", null, 2) {
+    companion object { val deliveryGate = Any() }
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE peers(id TEXT PRIMARY KEY,name TEXT NOT NULL,pub TEXT NOT NULL,trusted INTEGER NOT NULL,host TEXT NOT NULL,seen INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE letters(id TEXT NOT NULL,peer TEXT NOT NULL,name TEXT NOT NULL,body TEXT NOT NULL,incoming INTEGER NOT NULL,created INTEGER NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,next INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(id,peer,incoming))")
         db.execSQL("CREATE INDEX pending_due ON letters(incoming,state,next,created)")
+        tombstones(db)
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    private fun tombstones(db: SQLiteDatabase) = db.execSQL("CREATE TABLE IF NOT EXISTS deleted_received(id TEXT NOT NULL,peer TEXT NOT NULL,digest TEXT NOT NULL,PRIMARY KEY(id,peer))")
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) { tombstones(db) }
+    private fun digest(body: String) = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(body.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }
+    fun deleteLetter(letter: Letter) = synchronized(deliveryGate) {
+        val db=writableDatabase
+        db.beginTransaction()
+        try {
+            if(letter.incoming) db.execSQL("INSERT OR IGNORE INTO deleted_received VALUES(?,?,?)",
+                arrayOf(letter.id,letter.peer,digest(letter.body)))
+            db.delete("letters","id=? AND peer=? AND incoming=?",
+                arrayOf(letter.id,letter.peer,if(letter.incoming) "1" else "0"))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+    fun writeIfPending(letter: Letter, action: () -> Unit): Boolean = synchronized(deliveryGate) {
+        val pending=readableDatabase.rawQuery("SELECT 1 FROM letters WHERE id=? AND peer=? AND incoming=0 AND state='PENDING'",
+            arrayOf(letter.id,letter.peer)).use { it.moveToFirst() }
+        if(pending) action()
+        pending
+    }
     @Synchronized fun peers(): List<Peer> = readableDatabase.rawQuery(
         "SELECT id,name,pub,trusted,host,seen FROM peers ORDER BY trusted DESC,name", null).use { c ->
         buildList { while(c.moveToNext()) add(Peer(c.getString(0),c.getString(1),c.getString(2),
@@ -104,6 +126,13 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
         db.beginTransaction()
         try {
             require(peers().any { it.id == peer && it.trusted })
+            db.rawQuery("SELECT digest FROM deleted_received WHERE id=? AND peer=?",arrayOf(id,peer)).use { c ->
+                if(c.moveToFirst()) {
+                    require(c.getString(0)==digest(body))
+                    db.setTransactionSuccessful()
+                    return false
+                }
+            }
             val inserted = insert(db,id,peer,name,body,true,now,"RECEIVED") != -1L
             if (!inserted) {
                 db.rawQuery("SELECT body FROM letters WHERE id=? AND peer=? AND incoming=1",
@@ -169,4 +198,5 @@ object Identity {
         return KeyPair(store.getCertificate(alias).publicKey,store.getKey(alias,null) as java.security.PrivateKey)
     }
 }
+
 
