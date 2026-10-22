@@ -1,10 +1,47 @@
-# M6-1 進捗（2026-10-22 JST）
+# M6-1 完了記録（2026-10-22 JST）
 
-- 基準main: `f8e34783ec4842a9d97f40108b0070fd9386624b`。履歴本文コピー/個別削除、Android詳細ボタン、Windows自端末行/選択、共通ファイル契約とオフライン試験基盤を実装中。
-- 削除は端末内1記録のみ。保留writeと削除を直列化。受信削除は本文を残さずdigest tombstoneを保持し再送による復活と改変を拒否する。既にネットワークへ送った本文の遠隔取消はできない。
-- ローカル: Python17成功、Android生成vector1件はCI待ち。Ruff成功。独立レビューP1なし、P2のGUI停止/試験不足/契約サンプル不足を修正中。
-- 未完了: Android CI/WindowsパッケージCI、最終レビュー判定、PRマージ、main由来両Release再取得SHA/サイズ/署名照合、実機検収。
-- ファイル送受信本体はM6-2未実装。契約正本はFILE_TRANSFER_V1_CONTRACT_JA.md。
+- 実装・テスト・独立レビュー/P1/P2修正・PR #26マージ・Android/Windows Release配送は完了。**今回の新版の実機検収は未実施**。
+- 完成main実装SHA: `43fe2e48a49cf54de3c82b8602e6ed6f3ed64131`。最終PR HEAD: `143dc5bf5fb8eb80f013b1daebee45d9ff3c911b`。PR: https://github.com/xiaqui/ipmsg/pull/26
+- Android詳細画面/Windows個別履歴の本文コピー・確認付き1件削除、Android重複閉じる解消、Windows自端末ONLINE行/全端末・自分選択とrefresh保持を実装。
+- 保留削除と本文writeを直列化。UI削除はworkerで実行。受信削除は本文を削除し、SHA256 digestと重複キーだけをtombstone保存して再送復活/改変を拒否。削除後のACKは履歴を再作成しない。相手履歴の遠隔削除/既送信本文の取消はしない。
+- Android DB v1→v2は既存peer/letterを保持。Windowsも既存DBにtombstone表を追加。
+- 共通ファイル転送: FILE_TRANSFER_V1_CONTRACT_JA.mdを正本とし、OFFER/ACCEPT/CHUNK/COMPLETE例、異常seq/offset/hash/能力と不正metadataの共通fixtureをAndroid/Pythonで検査。**ファイル送受信本体はM6-2未実装**。
+
+## 品質証跡
+
+- Android最終PR CI [39734884725](https://github.com/xiaqui/ipmsg/actions/runs/39734884725): SDK23/28/34含む77件、失敗0/skip0、Lint/assemble/署名/package/minSdk検査成功。
+- Windows最終PR CI [39734884720](https://github.com/xiaqui/ipmsg/actions/runs/39734884720): core18件成功（Android生成hello/TEXT/ACKの逆方向試験含む）、Ruff成功、Windows17件成功/逆方向vector1件はLinux coreで実行、PyInstallerとEXE --version成功。
+- ローカルPython17件成功/CI生成vector1件skip、Ruff/compileall成功。GUIはoffscreen自端末/全端末/refresh/名前/本文clipboard、削除はclaimed pending/進行中write競合/受信再送復活防止を検査。
+- 独立エージェントレビューでP1なし。P2のGUI thread待ち、GUI試験不足、契約サンプル不足を修正。GitHub CodexのUTF8指摘も修正・thread解決。最終HEAD再確認でP1/P2なし。
+- CIで検出したWindows locale/テストDBclose、Linux Qt runtime不足、Android能力試験のJSON escape依存を修正。最終CIのみを合格根拠とする。
+
+## 同一完成main SHAからのRelease配送
+
+両方ともprivate repository内prerelease。Actions Artifactは不使用。ビルド元は上記完成main SHA（PR merge refではない）。
+
+| 対象 | Android | Windows |
+|---|---|---|
+| run ID | 39735284828 | 39735284783 |
+| Release ID | 420384351 | 420383996 |
+| tag | ipmsg-test-43fe2e48a49c-run-39735284828-1 | m5-windows-43fe2e48a49c-run-39735284783-1 |
+| 実配布asset ID | 664934502 | 664932815 |
+| ファイル | ipmsg-debug.apk | ipmsg-windows-43fe2e48a49c.zip |
+| bytes | 2,135,652 | 53,016,914 |
+| SHA-256 | 30d878234ae546438b786b889b077abef14526f52839e01717e74e6c77b1c3ac | 6a28f55aa73c25b766aa3e0605c9505826e9790e9d02d53d54ea3e32c0186e18 |
+
+- Android: https://github.com/xiaqui/ipmsg/releases/tag/ipmsg-test-43fe2e48a49c-run-39735284828-1
+- Windows: https://github.com/xiaqui/ipmsg/releases/tag/m5-windows-43fe2e48a49c-run-39735284783-1
+- 両jobでdraft直添付→認証再取得→サイズ/SHA一致→prerelease公開成功。Release API asset digestとも一致。Windowsは既存workflowのM5命名を継承しているが、このsource SHAにはM6-1実装を含む。
+- Android Release jobも77件/失敗0/skip0、Lint/assemble成功。v1/v2署名true、証明書SHA256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2`、再取得APKの証明書も一致。package=com.xiaqui.ipmsg/minSdk23。
+- Windowsは既存方式同様Authenticode未署名。ZIP再取得hash/サイズとRelease ID照合、EXE build/--versionは成功。実機起動/Defender/SmartScreenは今回未検証。
+- **Google Drive固定ファイルは変更していない**。今回要求のRelease配送を完了。将来Drive更新時はこのRelease APKだけを取得し、固定ID/署名/サイズ/SHAを照合してから内容更新・再取得検証する。
+
+## 再生成と残る実機検収
+
+- Android: main refのrelease-android-apk.ymlを実行（接続経路にdispatchがない場合、既存条件の一度だけの[release-test]付きmain push）。同一jobのテスト/Lint/署名/再取得照合を成功させ新run/assetを追跡。
+- Windows: main refのwindows-release.yml。固定依存、unittest/Ruff、PyInstaller、SHA256SUMS/PROVENANCE、draft直添付と再取得照合。Artifactを追加しない。
+- 詳細検収: HANDOFF_M6_1_2026-10-22_JA.md。Android6/8/14とWindowsで本文コピー、1件削除、保留削除後再送停止、受信削除後復活防止、返信ボタン、自分/全端末/複数選択、既存双方向TEXT/ACK/保留復帰を実機確認する。今回の自動試験を実機合格と扱わない。
+- 以降のM5/Android記録は履歴。旧「Windows未実装」「実機すべて未検証」等の現状判定は、最新TASKとHANDOFF_2026-10-18_JA.md追補/本節を優先。
 
 ---
 # M5 Windows版 進捗（2026-10-19 UTC）
