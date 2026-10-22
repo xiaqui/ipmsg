@@ -273,7 +273,8 @@ class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ip
             put("state",state);put("error",error);put("updated",System.currentTimeMillis());if(next!=null) {
                 put("next",next);if(next==0L) put("attempts",0)
             }
-        },"id=? AND peer=? AND incoming=?",arrayOf(id,peer,if(incoming) "1" else "0"))
+        },"id=? AND peer=? AND incoming=? AND (incoming=1 OR state NOT IN ('CANCEL_PENDING','CANCELLED') OR ?='CANCELLED')",
+            arrayOf(id,peer,if(incoming) "1" else "0",state))
     }
     @Synchronized fun updateFileProgress(id:String,fileId:String,offset:Long,prefix:String,state:String="TRANSFERRING",finalPath:String="") {
         writableDatabase.update("transfer_files",ContentValues().apply {
