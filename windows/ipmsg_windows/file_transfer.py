@@ -300,7 +300,7 @@ class FileTransferCore:
             if current is None:
                 self.store.set_transfer_state(transfer.transfer_id,peer.peer_id,False,"COMPLETED");return
             key=(transfer.transfer_id,current.file_id)
-            if key not in self._resumed:
+            if key not in self._resumed and current.offset<current.size:
                 answer=exchange({"type":"FILE_RESUME","transferId":transfer.transfer_id,"fileId":current.file_id,
                                  "offset":current.offset,"prefixSha256":current.prefix_sha256})
                 if answer.get("type")=="FILE_ERROR" and answer.get("code") in ("CANCELLED","DECLINED"):
