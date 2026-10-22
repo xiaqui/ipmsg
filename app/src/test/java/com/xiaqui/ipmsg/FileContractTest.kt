@@ -38,7 +38,9 @@ class FileContractTest {
         val caps=data.getJSONArray("capabilities")
         for(index in 0 until caps.length()) {
             val sample=caps.getJSONObject(index)
-            assertEquals(sample.getBoolean("supported"),sample.getJSONArray("caps").toString().contains("file-transfer/1"))
+            val advertised=sample.getJSONArray("caps")
+            assertEquals(sample.getBoolean("supported"),
+                (0 until advertised.length()).any { advertised.getString(it)=="file-transfer/1" })
         }
     }
 }

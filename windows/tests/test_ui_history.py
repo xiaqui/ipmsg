@@ -29,10 +29,14 @@ class UiTest(unittest.TestCase):
             window.toggle_trust()  # self is not a trust candidate
             window.device_name.setText("M6 UI test");window.save_name()
             self.assertIn("M6 UI test（自分）",window.peers.item(0).text())
-            window.select_destination([self_id],"全端末");window.refresh()
-            self.assertEqual(1,len(window.peers.selectedItems()))
+            stores[0].discover("peer","Android","test-only","192.168.1.2",1)
+            stores[0].trust("peer",True);window.refresh()
+            all_button=next(b for b in window.findChildren(QPushButton) if "全端末（" in b.text())
+            all_button.click();window.refresh()
+            self.assertEqual({self_id,"peer"},{i.data(Qt.UserRole) for i in window.peers.selectedItems()})
+            self.assertEqual([],stores[0].letters())  # selecting recipients never sends
             window.peers.item(0).setSelected(False)
-            self.assertEqual([],window.peers.selectedItems())
+            self.assertEqual(["peer"],[i.data(Qt.UserRole) for i in window.peers.selectedItems()])
             body="本文だけ\nUnicode🍎"
             window.body.setPlainText(body);window.send_to([self_id])
             def inspect_history():
