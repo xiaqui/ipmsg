@@ -1,3 +1,15 @@
+# M6-2 レビュー修正・統合記録（2026-10-23 JST）
+
+- 実装PR [#29](https://github.com/xiaqui/ipmsg/pull/29) はコードレビューP1 4件／P2 2件を修正し、最終HEAD `1ef1dc694a16aae67fa77ea60cb80f80bb137a9c` に対するAndroid CI [39832824891](https://github.com/xiaqui/ipmsg/actions/runs/39832824891) とWindows CI [39832824599](https://github.com/xiaqui/ipmsg/actions/runs/39832824599) はどちらも成功。6件のレビューコメントに修正内容を返信し、6つのスレッドを解決済み。
+- 主なレビュー対応：受信テンポラリファイルのSHA-256実体再検証、AndroidのFINALIZING再起動復旧、キャンセル状態への遅延応答上書き防止、Android送信チャンクのSAFデスクリプタseek、最終ACK消失後のFILE_COMPLETE再送、Windowsの成功チャンクの最大128件連続処理。
+- Windows回帰試験に、同じ長さの受信一時ファイル破損拒否、CAPS中キャンセルの永続化、最終ACK喪失後再起動を追加。レビュー修正前のCI合格をレビュー修正後の完了根拠にしない。
+- PR #29マージ済み。完成main実装SHAは `c41111f1c8adab97fd0263f4ebfbb5ef4f78a979`。
+- Release名のM5表記をM6-2に修正したPR [#30](https://github.com/xiaqui/ipmsg/pull/30) もマージ済み。両プラットフォーム同一ビルドソースへの配送を意図し、`[release-test]`付き最終main SHA `8e8738e77418cfb19d10c180530e14272a3aebee` でWindows/Android配布ワークフローが発火する構成とした。**本記録時点では今回のmain pushワークフローのrun ID、Release asset、再取得SHA/署名はツール上で未確認のため、配送完了とは扱わない。**
+- Android同士・Android↔Windows実機ファイル転送、SAFの非seek provider、Wi-Fi切断復帰、2GiBの実機転送、Windows SmartScreen等の現物検収は未実施。受信承諾、保存先、失敗・取消、同報、履歴、旧TEXT/ACKを実機で回帰する。
+- 最新実機検収および配送の証跡が得られたら本節へ追補する。Google Drive固定APKは更新していない。
+
+---
+
 # M6-1 完了記録（2026-10-22 JST）
 
 - 実装・テスト・独立レビュー/P1/P2修正・PR #26マージ・Android/Windows Release配送は完了。**今回の新版の実機検収は未実施**。
