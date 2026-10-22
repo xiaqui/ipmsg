@@ -1,4 +1,4 @@
-name: Windows M5 Release
+name: Windows M6-2 Release
 
 on:
   push:
@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: windows-m5-release-${{ github.sha }}
+  group: windows-m6-2-release-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -45,7 +45,7 @@ jobs:
           "$hash  $zip" | Set-Content -Encoding ascii SHA256SUMS.txt
           @("source_sha=${{ github.sha }}","run_id=${{ github.run_id }}","run_attempt=${{ github.run_attempt }}","asset=$zip","size_bytes=$size","sha256=$hash","authenticode=unsigned-test-release") | Set-Content -Encoding ascii PROVENANCE.txt
           "zip=$zip" >> $env:GITHUB_OUTPUT
-          "tag=m5-windows-$short-run-${{ github.run_id }}-${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
+          "tag=m6-windows-$short-run-${{ github.run_id }}-${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
       - name: Create draft and upload directly to GitHub Release
         id: release
         shell: pwsh
@@ -54,7 +54,7 @@ jobs:
         run: |
           $tag = "${{ steps.package.outputs.tag }}"
           if (gh release view $tag 2>$null) { throw "Refusing to reuse an existing Release tag: $tag" }
-          gh release create $tag --target "${{ github.sha }}" --draft --prerelease --title "M5 Windows $tag" --notes "Windows 11 M5 test release. Android protocol v1 compatible. VAIO↔Android real-device verification remains pending. Authenticode unsigned; verify SHA256SUMS.txt."
+          gh release create $tag --target "${{ github.sha }}" --draft --prerelease --title "M6-2 Windows $tag" --notes "Windows 11 M6-2 test release with file-transfer/1. Android and Windows real-device file transfer acceptance remains pending. Authenticode unsigned; verify SHA256SUMS.txt."
           gh release upload $tag "${{ steps.package.outputs.zip }}" SHA256SUMS.txt PROVENANCE.txt
           $releaseId = gh release view $tag --json databaseId --jq .databaseId
           if (-not $releaseId) { throw "Release ID was not resolved" }
