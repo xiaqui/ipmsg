@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
 
 from . import __version__
 
@@ -44,7 +45,7 @@ def main() -> int:
     from .protocol import fingerprint
     from .store import Store
 
-    app = QApplication(sys.argv); app.setQuitOnLastWindowClosed(False)
+    app = QApplication.instance() or QApplication(sys.argv); app.setQuitOnLastWindowClosed(False)
     instance_name = "Xiaqui-IPMessenger-v1"
     probe = QLocalSocket(); probe.connectToServer(instance_name)
     if probe.waitForConnected(250):
@@ -60,8 +61,10 @@ def main() -> int:
     class Bridge(QObject):
         changed = Signal()
         arrived = Signal(str, str)
+        completed = Signal(object)
 
     bridge = Bridge()
+    bridge.completed.connect(lambda callback:callback())
 
     class Window(QMainWindow):
         def __init__(self):
@@ -93,6 +96,10 @@ def main() -> int:
             self.peers.blockSignals(True)
             try:
                 self.peers.clear()
+                own_name=str(settings.value("deviceName",os.environ.get("COMPUTERNAME","Windows")))[:40]
+                own=QListWidgetItem(f"{own_name}（自分） ONLINE")
+                own.setData(Qt.UserRole,self_id);self.peers.addItem(own)
+                own.setSelected(self_id in selected_ids)
                 for peer in store.peers():
                     state="ONLINE" if peer.online() else "OFFLINE"; trust="承認済" if peer.trusted else "未承認"
                     name="".join(ch if ch.isprintable() and ch not in "\r\n" else "�" for ch in peer.name)
@@ -116,7 +123,7 @@ def main() -> int:
                     item.setSelected(item.data(Qt.UserRole) in selected_ids)
             finally:
                 self.peers.blockSignals(False)
-            self.recipients = list(dict.fromkeys(ids))
+            self.recipients = None
             self.destination.setText(f"宛先: {title}")
         def send_to(self, ids):
             text=self.body.toPlainText()
@@ -128,6 +135,7 @@ def main() -> int:
         def toggle_trust(self):
             items=self.peers.selectedItems()
             if len(items)!=1: return
+            if items[0].data(Qt.UserRole)==self_id: return
             peer=next(p for p in store.peers() if p.peer_id==items[0].data(Qt.UserRole))
             if peer.trusted:
                 answer=QMessageBox.question(self,"承認解除",f"{peer.name} の承認を解除しますか？")
@@ -144,10 +152,36 @@ def main() -> int:
         def save_name(self):
             value=self.device_name.text().strip()[:40]
             if not value: QMessageBox.warning(self,"端末名","空の端末名は使えません");return
-            settings.setValue("deviceName",value);node.name=value
+            settings.setValue("deviceName",value);node.name=value;self.refresh()
         def show_letters(self,incoming):
             dialog=QDialog(self);dialog.setWindowTitle("受信箱" if incoming else "送信履歴");layout=QVBoxLayout(dialog)
-            view=QTextEdit();view.setReadOnly(True);view.setPlainText("\n\n".join(f"{x.name} [{x.state}]\n{x.body}" for x in store.letters(incoming)));layout.addWidget(view);dialog.resize(480,500);dialog.exec()
+            listing=QListWidget();layout.addWidget(listing)
+            view=QTextEdit();view.setReadOnly(True);layout.addWidget(view)
+            letters=[]
+            def reload():
+                letters[:]=store.letters(incoming);listing.clear();view.clear()
+                for letter in letters: listing.addItem(f"{letter.name} [{letter.state}] {letter.body[:45]}")
+            def current():
+                row=listing.currentRow()
+                return letters[row] if 0<=row<len(letters) else None
+            listing.currentRowChanged.connect(lambda _row:view.setPlainText(current().body if current() else ""))
+            controls=QHBoxLayout();copy=QPushButton("本文をコピー");delete=QPushButton("削除")
+            controls.addWidget(copy);controls.addWidget(delete);layout.addLayout(controls)
+            copy.clicked.connect(lambda:QApplication.clipboard().setText(current().body) if current() else None)
+            def delete_current():
+                letter=current()
+                if not letter:return
+                if QMessageBox.question(dialog,"この端末の記録を1件削除",
+                    "相手端末の履歴は削除されません。保留の再送を停止します。既に送信された本文は取り消せません。")!=QMessageBox.Yes:return
+                delete.setEnabled(False)
+                def remove():
+                    try:
+                        store.delete_letter(letter)
+                        bridge.completed.emit(lambda:(reload(),delete.setEnabled(True)))
+                    except Exception:
+                        bridge.completed.emit(lambda:(delete.setEnabled(True),QMessageBox.warning(self,"削除","削除できませんでした")))
+                threading.Thread(target=remove,daemon=True).start()
+            delete.clicked.connect(delete_current);reload();dialog.resize(480,500);dialog.exec()
         def closeEvent(self,event): event.ignore();self.hide();tray.showMessage("IP Messenger","受信を続けています")
 
     window=Window(); tray=QSystemTrayIcon(window);tray.setToolTip("IP Messenger")
@@ -174,4 +208,5 @@ def main() -> int:
 
 
 if __name__ == "__main__": raise SystemExit(main())
+
 

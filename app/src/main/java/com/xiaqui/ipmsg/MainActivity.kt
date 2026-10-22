@@ -168,15 +168,43 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this).setTitle(if(incoming) "受信箱" else "送信履歴")
             .setItems(labels) { _,index ->
                 val letter=letters[index]
-                AlertDialog.Builder(this).setTitle(letter.name).setMessage(letter.body)
-                    .setPositiveButton(if(incoming) "個別に返信" else "閉じる") { _,_ ->
-                        if(incoming) { selected.clear();selected.add(letter.peer);rendered="";renderPeers();composer.requestFocus() }
-                    }.setNegativeButton("閉じる",null).show()
+                showLetter(letter)
             }.setNegativeButton("閉じる",null)
             .setNeutralButton("保留を再送") { _,_ ->
                 MessengerService.engine?.wake() ?: store.retry()
                 toast("承認済みの相手へ、探索と安全な再送を試します")
             }.show()
+    }
+    internal fun showLetter(letter: Letter) {
+        val box=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(24,8,24,8) }
+        box.addView(TextView(this).apply { text=letter.body;setTextIsSelectable(true) })
+        val dialog=AlertDialog.Builder(this).setTitle(letter.name)
+            .setView(ScrollView(this).apply { addView(box) }).setNegativeButton("閉じる",null).create()
+        box.addView(button("本文をコピー") {
+            (getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("本文",letter.body))
+            toast("本文をコピーしました")
+        })
+        box.addView(button("削除") {
+            AlertDialog.Builder(this).setTitle("この端末の記録を1件削除")
+                .setMessage("相手端末の履歴は削除されません。保留中の場合は今後の再送を停止します。既に送信された本文は取り消せません。")
+                .setNegativeButton("キャンセル",null).setPositiveButton("削除") { _,_ ->
+                    Thread {
+                        val worker=Store(applicationContext)
+                        val result=runCatching { worker.deleteLetter(letter) }
+                        worker.close()
+                        handler.post { if(!isFinishing) {
+                            if(result.isSuccess) { dialog.dismiss();toast("削除しました") }
+                            else toast("削除できませんでした")
+                        } }
+                    }.start()
+                }.show()
+        })
+        if(letter.incoming && (letter.peer==self || store.peers().any { it.id==letter.peer && it.trusted }))
+            dialog.setButton(AlertDialog.BUTTON_POSITIVE,"個別に返信") { _,_ ->
+                selected.clear();selected.add(letter.peer);rendered="";renderPeers();composer.requestFocus()
+            }
+        dialog.show()
     }
     private fun showLanDiagnostics() {
         val report = MessengerService.engine?.diagnosticReport() ?: buildString {
@@ -248,4 +276,5 @@ class MainActivity : Activity() {
             }.setNegativeButton("閉じる",null).show()
     }
 }
+
 

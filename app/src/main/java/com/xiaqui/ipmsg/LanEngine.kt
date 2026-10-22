@@ -365,7 +365,9 @@ class LanEngine(private val context: Context, private val store: Store,
                     diagnostics.tcpConnected(peer.id)
                     require(running.get() && store.peers().any { it.id == peer.id && it.trusted })
                     stage = "本文送信"
-                    Protocol.write(DataOutputStream(socket.getOutputStream()),request)
+                    check(store.writeIfPending(letter) {
+                        Protocol.write(DataOutputStream(socket.getOutputStream()),request)
+                    }) { "削除済みの送信記録" }
                     stage = "ACK待機・検証"
                     val ack = Protocol.open(Protocol.read(DataInputStream(socket.getInputStream())),pair,recipient)
                     require(ack.getString("type") == "ACK" && ack.getString("id") == letter.id)
@@ -467,4 +469,5 @@ internal class NetworkReconcileGate {
         return true
     }
 }
+
 
