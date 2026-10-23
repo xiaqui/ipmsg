@@ -138,8 +138,12 @@ class FileTransferManager(private val context:Context,private val store:Store,
     private fun error(id:String,code:String,retryable:Boolean,file:String="")=JSONObject().put("type","FILE_ERROR")
         .put("transferId",id).put("code",code).put("retryable",retryable).also { if(file.isNotEmpty()) it.put("fileId",file) }
     private fun offer(peer:Peer,id:String,body:JSONObject):JSONObject {
+        // FILE_OFFER is retried while waiting for consent, and can recur after consent.
+        // Only the first receipt of a transfer should raise a user notification.
+        val firstOffer=runCatching { store.transfer(id,peer.id,true) }.isFailure
         val transfer=store.receiveOffer(id,peer,FileContract.parseFiles(body.getJSONArray("files")))
-        changed();offered(peer.name,id)
+        changed()
+        if(firstOffer && transfer.state=="WAITING_ACCEPT") offered(peer.name,id)
         if(transfer.state=="DECLINED") return error(id,"DECLINED",false)
         if(transfer.state !in setOf("TRANSFERRING","PAUSED","COMPLETED")) return error(id,"TIMEOUT",true)
         val selected=JSONArray();store.transferFiles(id).filter { it.state!="COMPLETED" }.forEach { file ->
