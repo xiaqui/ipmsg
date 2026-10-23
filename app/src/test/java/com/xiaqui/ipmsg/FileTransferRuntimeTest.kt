@@ -58,6 +58,27 @@ class FileTransferRuntimeTest {
         assertEquals("CANCELLED",cancelled.getString("code"))
     }
 
+    @Test fun repeatedFileOfferNotifiesOnlyOnFirstArrival() {
+        val notifications=mutableListOf<String>()
+        val observed=FileTransferManager(context,store,{}, { _,id -> notifications.add(id) })
+        val id=UUID.randomUUID().toString()
+        val file=metadata("multi-file test".toByteArray())
+        assertEquals("TIMEOUT",observed.handle(peer,offer(id,file)).getString("code"))
+        assertEquals(listOf(id),notifications)
+        // Sender retries the same OFFER while the receiver is awaiting user consent.
+        assertEquals("TIMEOUT",observed.handle(peer,offer(id,file)).getString("code"))
+        assertEquals(listOf(id),notifications)
+        val temp=java.io.File(context.filesDir,"$id-notification.part").apply { writeBytes(ByteArray(0)) }
+        store.acceptTransfer(id,peer.id,Uri.parse("content://example/tree/root").toString(),
+            mapOf(file.fileId to temp.absolutePath))
+        // Retries continue after the user has opened the notification and accepted.
+        assertEquals("FILE_ACCEPT",observed.handle(peer,offer(id,file)).getString("type"))
+        assertEquals(listOf(id),notifications)
+        val nextId=UUID.randomUUID().toString()
+        assertEquals("TIMEOUT",observed.handle(peer,offer(nextId,metadata(ByteArray(0)))).getString("code"))
+        assertEquals(listOf(id,nextId),notifications)
+    }
+
     @Test fun metadataLimitsRejectPathsCountsAndOversizeWithoutAllocation() {
         assertFalse(FileContract.validName("../evil"));assertFalse(FileContract.validName("CON.txt"))
         assertFalse(FileContract.validName("tail. "));assertTrue(FileContract.validName("日本語.pdf"))
