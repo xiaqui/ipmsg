@@ -1,3 +1,18 @@
+# M6-2 実機検収追補（2026-10-24 JST、社長報告）
+
+- Android 6〜10 の対象実機で基本動作を確認。Android↔Androidのファイル送受信および複数ファイル一括転送が成功し、実用運用中。Android 14（SO-53C）の本項の総合検収は別途扱う。
+- VAIO XI-X12 ↔ Xperia Z4 Tablet（Android 7）でファイル送受信が双方向成功。Windows含め全条件を合格とするものではない。
+- Z4Tの受信時、日本語名のファイルに関連してAndroid標準「ドキュメント」アプリが一度終了。IP Messenger本体のクラッシュとは区別し、原因・再現性は未確定。
+- NoRoot Firewall 有効時は他端末の存在を検知できるが、本文/ファイルの送受信ができない問題は継続。UDP探索成功をTCP配送成功と混同しない。
+- Android受信中の再通知問題：PR #32（main `a65f53049a2e116e302f4a412631f51d706f1182`）で同一FILE_OFFER再送の通知抑制を修正。ただし修正入りAPKの配布/端末反映は未確認。直近の実用試験で通知重複は目立たなかったが「実機で修正確認済み」とは判定しない。
+- **Z4Tからの画像送信の一過性失敗**：`/storage/emulated/0/Download/Quick Share/MONEY.jpg`（19,838バイト）で報告。別の同フォルダJPEGは成功。Termuxで元ファイルとコピー`MONEY2.jpg`のサイズ/SHA256一致を確認。後に元のMONEY.jpgも送信成功し、現在は再現不能。画像内容破損とは断定しない。
+- **送信履歴スクリーンショット（2026-10-24）**：MONEY.jpgの複数宛先送信にて、SO-53Cは`WAITING_ACCEPT`（0/19838）、SO-02Kは`QUEUED`+`IO_ERROR`（0/19838）、XI-X12も`QUEUED`+`IO_ERROR`（0/19838）。P710にはコピーしたMONEY2.jpgで`WAITING_ACCEPT`（0/19838）が表示された。別履歴ではXI-X12への`DICE.jpg`（37913/37913）、`倫からの手紙.txt`（634/634）、`package.json`が`COMPLETED`。エラーは宛先別であり、転送永久失敗やJPEGの異常を意味するとは限らない。
+- 上記スクリーンショットにより、問題の`MONEY.jpg`は少なくとも送信キュー生成に成功している。初期の「選択直後に必ず失敗」推測を確定事実として扱わず、`QUEUED + IO_ERROR`の例外発生箇所、宛先別到達性、再試行・表示状態を優先調査する。
+- **現判定**：基本送受信・複数選択は実用合格。断続的`IO_ERROR`、DocumentsUI一度クラッシュ、NoRoot Firewall制約は未解決。再発時はエラー詳細と宛先別状態を採取し、正常動作中の転送経路を根拠なく改造しない。
+- GitHub Actions利用枠は社長の画面で実行時間3000/3000分、ストレージ2/2GBと確認。修正済みPR #32の配布は未確認であり、検収記録更新のみを行う。
+
+---
+
 # M6-2 レビュー修正・統合記録（2026-10-23 JST）
 
 - 実装PR [#29](https://github.com/xiaqui/ipmsg/pull/29) はコードレビューP1 4件／P2 2件を修正し、最終HEAD `1ef1dc694a16aae67fa77ea60cb80f80bb137a9c` に対するAndroid CI [39832824891](https://github.com/xiaqui/ipmsg/actions/runs/39832824891) とWindows CI [39832824599](https://github.com/xiaqui/ipmsg/actions/runs/39832824599) はどちらも成功。6件のレビューコメントに修正内容を返信し、6つのスレッドを解決済み。
