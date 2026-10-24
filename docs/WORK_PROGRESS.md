@@ -4,6 +4,7 @@
 - VAIO XI-X12 ↔ Xperia Z4 Tablet（Android 7）でファイル送受信が双方向成功。Windows含め全条件を合格とするものではない。
 - Z4Tの受信時、日本語名のファイルに関連してAndroid標準「ドキュメント」アプリが一度終了。IP Messenger本体のクラッシュとは区別し、原因・再現性は未確定。
 - NoRoot Firewall 有効時は他端末の存在を検知できるが、本文/ファイルの送受信ができない問題は継続。UDP探索成功をTCP配送成功と混同しない。
+- **Z3TC（Android 6）NoRoot Firewall追加観察（2026-10-25報告）**：NoRoot Firewallを停止した瞬間、ChatGPTの通知が短時間に大量到着。ChatGPT本体はFirewall設定で以前から通信許可済み。通知配送を担うGoogle Play開発者サービス（FCM）等の別UID/通信経路またはVPNが長時間接続へ与える影響が疑われる。ChatGPTのアプリ許可だけではFCM到達性は保証されず、IP Messengerの「UDP発見はできるがTCP通信不能」と同じVPN/Firewall環境に依存する可能性がある。ただし**同一原因は未確定**。次回はFirewall有効時のGoogle Play開発者サービス/Googleサービスフレームワークの許可、Wi-Fi/LANアクセス、VPN経路と停止直後の変化を比較。Firewall無効化を恒久対策とはしない。
 - Android受信中の再通知問題：PR #32（main `a65f53049a2e116e302f4a412631f51d706f1182`）で同一FILE_OFFER再送の通知抑制を修正。ただし修正入りAPKの配布/端末反映は未確認。直近の実用試験で通知重複は目立たなかったが「実機で修正確認済み」とは判定しない。
 - **Z4Tからの画像送信の一過性失敗**：`/storage/emulated/0/Download/Quick Share/MONEY.jpg`（19,838バイト）で報告。別の同フォルダJPEGは成功。Termuxで元ファイルとコピー`MONEY2.jpg`のサイズ/SHA256一致を確認。後に元のMONEY.jpgも送信成功し、現在は再現不能。画像内容破損とは断定しない。
 - **送信履歴スクリーンショット（2026-10-24）**：MONEY.jpgの複数宛先送信にて、SO-53Cは`WAITING_ACCEPT`（0/19838）、SO-02Kは`QUEUED`+`IO_ERROR`（0/19838）、XI-X12も`QUEUED`+`IO_ERROR`（0/19838）。P710にはコピーしたMONEY2.jpgで`WAITING_ACCEPT`（0/19838）が表示された。別履歴ではXI-X12への`DICE.jpg`（37913/37913）、`倫からの手紙.txt`（634/634）、`package.json`が`COMPLETED`。エラーは宛先別であり、転送永久失敗やJPEGの異常を意味するとは限らない。
