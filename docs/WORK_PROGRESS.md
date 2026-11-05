@@ -118,7 +118,7 @@
 1. mainが `bc4ec6127c65ae75654d967d222f8669597357a2` 以上であることを確認し、main refの `release-android-apk.yml` を手動実行する。PR run、一時APK、既存Release、古いArtifactを流用しない。
 2. 同一job内のunit test、Lint、assembleDebug、alias、v1/v2署名、証明書SHA-256、package、minSdk、SHA256SUMS、provenance検査が全て成功し、非公開draftへ添付したAPKを再取得・再照合後にprerelease公開したrunだけを採用する。
 3. run ID、main source SHA、Release ID/tag、APK asset ID、APKサイズ/SHA-256/証明書を本書へ追記する。Releaseの`ipmsg-debug.apk`以外を配送しない。
-4. 検証済みAPKでDrive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` の内容を上書きし、固定URLと共有権限を維持する。rename/フォルダ移動は固定IDが変わらない範囲だけ可。
+4. 検証済みAPKでDrive固定ID `<repository-configured-id>` の内容を上書きし、固定URLと共有権限を維持する。rename/フォルダ移動は固定IDが変わらない範囲だけ可。
 5. Driveから再取得し、Release assetとサイズ、SHA-256、byte-for-byte一致を確認してから配送完了とする。
 
 現在のDrive固定IDは、2026-10-17 13:10:25 JSTにテストRelease asset `649374811`（source `a0da626b412b0224acdc6ddf47368f0e1ed975d6`、2,118,069 bytes、SHA-256 `a1a4de64fbfb65bdebd618b407d928540f8b56c078da36cd62b6c3471dcdb342`）で上書きし、再取得一致まで確認済み。ただしこれは第2段階修正前のAPKであり、今回の修正版として扱わない。
@@ -140,7 +140,7 @@
 - 安全境界: PR／通常build workflowは `contents: read`。Release専用workflowだけ `contents: write` で、main ref以外の手動実行を拒否。APKはdraftのまま再取得検査し、全検査成功後だけprereleaseとして公開。
 - 初回run [38996973493](https://github.com/xiaqui/ipmsg/actions/runs/38996973493) はdraft作成直後の一覧反映遅延で停止。Release ID `415548211`／APK asset ID `649359200` はdraftのまま非公開で、本番・配布物として扱わない。
 - 独立レビュー: PR #6でPR書込権限、main外dispatch、公開前検査、旧Artifact手順をP1/P2として修正。PR #7で有界リトライと完全tag一致を再レビューし、最終残存P1/P2なし。全inline thread解決済み。
-- Google Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` は後続作業でこのRelease assetへ上書き済み。サイズ・SHA-256・byte-for-byte一致を再取得確認した。固定IDとURLは維持。Windows版開発は開始していない。
+- Google Drive固定ID `<repository-configured-id>` は後続作業でこのRelease assetへ上書き済み。サイズ・SHA-256・byte-for-byte一致を再取得確認した。固定IDとURLは維持。Windows版開発は開始していない。
 - 共通手順: [GITHUB_RELEASE_APK_DELIVERY_JA.md](GITHUB_RELEASE_APK_DELIVERY_JA.md)
 
 ## Android LAN探索・オンライン判定修正（2026-10-17 JST）
@@ -172,7 +172,7 @@ GitHub ActionsのArtifactストレージ容量制限によるupload失敗は既�
 2. 同一jobでunit test（SDK 23/28/34）、Lint、assembleDebug、署名alias／証明書SHA-256、package=`com.xiaqui.ipmsg`、minSdk=23が成功したrun IDを確定する。
 3. workflowがdraftへ添付したAPKを再取得し、サイズ、SHA-256、署名証明書を再照合してからprerelease公開したことを確認する。source SHA、run ID、Release ID/tag、APK asset IDを記録する。
 4. Releaseの `ipmsg-debug.apk` を取得し、同時添付の `SHA256SUMS`、`provenance.txt`、`signing.txt`、`badging.txt`と照合する。Source code ZIPをAPKとして扱わない。
-5. APKのサイズ／SHA-256を記録し、Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` の内容を実APKで更新する。Drive上のrenameやフォルダ移動は固定IDが変わらない限り可。共有権限とURLを再確認する。
+5. APKのサイズ／SHA-256を記録し、Drive固定ID `<repository-configured-id>` の内容を実APKで更新する。Drive上のrenameやフォルダ移動は固定IDが変わらない限り可。共有権限とURLを再確認する。
 6. Driveから再取得し、Release assetとのサイズ、SHA-256、byte-for-byte一致を検証する。run／Release／asset／APK／Driveの値を本書へ追記する。
 7. XZ1 Compact、Rakuten Hand、Ace IIIへ導入し、双方向UDP探索、署名、最終発見、TCP、ACK、VPNを診断画面で採取する。実機成功前に「実機修正済み」と断定しない。
 
@@ -234,8 +234,8 @@ Secretsの値／秘密鍵は取得・記録していない。
 | ZIP内のAPK | ipmsg-debug.apk |
 | 実APKサイズ（CIで確認） | 2,105,118 bytes |
 | 実APK SHA-256（CI／Drive再取得で確認） | 6ffef378b2d11152aed6eaedd2af7979aca41ec2125cc198c95ceb8d88421a0f |
-| Driveファイル名／固定ID | ipmsg-debug.apk / 1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN |
-| Drive URL | https://drive.google.com/file/d/1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN/view |
+| Driveファイル名／固定ID | ipmsg-debug.apk / <repository-configured-id> |
+| Drive URL | <repository-configured delivery URL> |
 | Drive配送日時 | 2026-10-16 02:44 JST（2026-10-15 17:44 UTC） |
 | 検査artifact | ipmsg-checks / 11986371376 |
 
@@ -250,7 +250,7 @@ Driveから再取得したAPKは **2,105,118 bytes**、SHA-256 `6ffef378b2d11152
 1. 初期Windows環境でgit cloneは `getaddrinfo() thread failed to start`、gh認証はinvalid。接続済みGitHub APIで実装・PR・CIを完走。
 2. artifact取得URLをWindowsで取得しようとして名前解決に失敗。Node／ブラウザの実行系もTransport closed。
 3. 途中でクラウドLinux環境に切替後も、権限設定に旧Windowsパスが残り、`workdir=/tmp, shell=/bin/bash`でもコマンド開始前に次のエラー：
-   `invalid sandbox permission path URI: file:///C:/Users/xiaqu/Documents/Codex/2026-10-15/new-chat is invalid on linux`
+   `invalid sandbox permission path URI: <redacted local Windows path> is invalid on linux`
 4. 権限の迂回や鍵・トークンの取り出しは行っていない。GitHub APIでのAPK完成と記録までは進めた。
 5. 2026-10-16 JSTの再開時にはLinux実行が正常化し、取得・展開・照合・Drive配送・Drive再取得照合を完了した。
 
@@ -258,7 +258,7 @@ Driveから再取得したAPKは **2,105,118 bytes**、SHA-256 `6ffef378b2d11152
 
 1. 対象main SHAと成功run、Release ID/tag、APK asset IDを確定し、Releaseの `ipmsg-debug.apk` を取得。
 2. Release assetを同時添付のSHA／署名／provenance記録と照合。Source code ZIPをAPK名にしない。
-3. Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` の現在メタデータとファイル名 `ipmsg-debug.apk` を確認。
+3. Drive固定ID `<repository-configured-id>` の現在メタデータとファイル名 `ipmsg-debug.apk` を確認。
 4. MIME `application/vnd.android.package-archive` の実APKで同じ固定IDを更新し、URLを維持。
 5. Driveから再取得し、Release assetとのサイズ・SHA-256・byte-for-byte一致を確認して本書を更新。
 
@@ -270,5 +270,8 @@ Android6 Z3TC、Android7 Z4T、Android8 XZ1 Compact、Android14 Ace IIIでの導
 初回は同じWi-Fiで、双方の設定の「常駐受信を有効にする」をON、端末名を設定し、相手の設定にある指紋全桁を直接比較して双方で承認する。
 詳細はTESTING.md。ゲストWi-Fiの端末間分離、IPv6専用LAN、時計の大きなずれ、OS省電力の制約に注意する。
 M3の実装はここで停止。配送／実機検収以外でM4以降に進むには別の明示指示を待つ。
+
+
+
 
 

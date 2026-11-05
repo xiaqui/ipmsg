@@ -15,8 +15,8 @@
 - Android 8以前の絵文字表示問題: PR #12、main実装 `bd445d1d68d5298ac4046230a474cf3aaac1ff07`。🟢絵文字を通常字形「●」＋色付きSpanに置換。**この変更を含むAPKはまだ配送・実機確認していない。** 通信ロジック変更なし。
 - 既存LANメッセンジャー比較: PR #13、`docs/EXISTING_LAN_MESSENGERS_RESEARCH_JA.md` を追加（Syna、FeiQ Android、TransportChat、本家IP Messenger）。コードへの流用なし。ブランチ `design/mobile-ui-mockups` / PR #5のClaudeデザイン案は**不採用**。mainに取り込まない。
 - Artifactストレージ制限対策として、署名APKを**Actions Artifactを経由せず**GitHub Releasesの検証済みprereleaseへ出す `.github/workflows/release-android-apk.yml` を導入（PR #6／#7）。テスト、Lint、署名／package／minSdk／ハッシュ／再取得照合を通したものだけを使う。
-- 配送済みLAN修正APK: GitHub Actions run `39015422319`、Release tag `ipmsg-test-b87c43c2d149-run-39015422319-1`、Release asset `649912733`、`ipmsg-debug.apk`、**2,131,703 bytes**、SHA-256 `9ecdf11462da537b02ee012e8925c62583664bcd2d325d2e61d3ff73c702d9c0`。APKはユーザーがチャットへ提供し、倫がDrive既存ファイルIDに上書きした。Driveから再取得したサイズは2,131,703 bytes。以後、Drive固定ID維持が必須。
-- Drive固定ID: `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN`、URL: https://drive.google.com/file/d/1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN/view 。上記は**PR #12のUI修正前**のAPK。ファイル名 `ipmsg-debug.apk`。新規作成ではなく既存ファイルの**内容更新**を行う。
+- 配送済みLAN修正APK: GitHub Actions run `39015422319`、Release tag `ipmsg-test-b87c43c2d149-run-39015422319-1`、Release asset `649912733`、`ipmsg-debug.apk`、**2,131,703 bytes**、SHA-256 `9ecdf11462da537b02ee012e8925c62583664bcd2d325d2e61d3ff73c702d9c0`。承認済みの半自動経路で既存の固定配送ファイルを更新し、再取得サイズ2,131,703 bytesを確認した。
+- Drive固定ID: `<repository-configured-id>`、URL: <repository-configured delivery URL> 。上記は**PR #12のUI修正前**のAPK。ファイル名 `ipmsg-debug.apk`。新規作成ではなく既存ファイルの**内容更新**を行う。
 
 ## 実機検証で確認した事実
 
@@ -32,7 +32,7 @@
 
 ### Android基本通信の検収状況
 
-- **T1 緑●オンライン表示：合格。** #12を含むmain SHA `de7f542a07414724787bb616ff01806ce7cef6e8` からGitHub Releases直接生成（run `39110854067`、asset `652916953`、2,131,909 bytes）。社長がRelease APKをブラウザからダウンロードし、ChatGPTに添付。倫が既存Drive固定ID `1QFFoHsyjE6MmXe023jpEzW29KMTX4oLN` を上書き（サイズ一致）。XZ1で緑●表示の実機確認済み。**GitHub Release→Driveはユーザー介在の半自動経路。**
+- **T1 緑●オンライン表示：合格。** #12を含むmain SHA `de7f542a07414724787bb616ff01806ce7cef6e8` からGitHub Releases直接生成（run `39110854067`、asset `652916953`、2,131,909 bytes）。Release APKを半自動経路で既存の固定配送先へ更新し、サイズを照合。XZ1で緑●表示の実機確認済み。
 - **T2 長時間スリープ：ユーザー報告で合格。**
 - **T4 アプリ強制停止→手動起動：再探索・オンライン表示復帰を画像で確認。** XZ1と他端末で緑●を確認。強制停止後の双方向メッセージACKについては写真単体からは未立証。OSの自動サービス再生成試験ではない。
 - **T6 古いOS：Android 6 Z3 Tablet Compact（SGP612）とAndroid 7 Xperia Z4 Tablet、およびAndroid 8 XZ1・Android 14 Ace IIIの動作実績。** Android 6ではXZ1との送受信・ACK成功、Android 7もZ4 Tabletからの「仲間に入れて」と相手からの「おやすみ」を受信箱で確認し双方向送受信合格。
@@ -75,8 +75,12 @@
 
 ## 作業方針／引き継ぎ時の注意
 
-- ユーザーのWork/Codex利用枠を節約する。倫がGitHub調査・仕様整理・軽微修正・レビュー整理を直接行い、長時間の環境操作やWindows実装等に必要なときだけWorkを割り当てる。CodexとWorkの利用枠共有に注意。
+- 不要なリモート実行を避け、軽微な文書・調査作業はローカルで行う。長時間の環境操作やWindows実装には適切な開発環境を割り当てる。
 - レビューは原則実装後1回、P1/P2と修正差分だけ再確認。無限レビュー／修正ループを作らない。既存の実機確認と古い診断の混同禁止。
 - 現行のAndroidにはオンライン判定と送信可否を分離したTCP fallbackが実装されている。通信障害と古いAndroidでの絵文字未対応を混同しない。
 - **GitHub ReleaseからGoogle Driveへのバイナリ直接連携は、この会話で使用したGitHubコネクタ経由では確立していない。** ユーザー提供APKのチャット添付→Drive既存ID上書きは実証済み。ユーザーの手作業が発生するため、自動化経路は別途検討。Google Apps Scriptや公開配布の案は議論されたが未実装。リポジトリのPublic化も未実施。
 - GitHub/Driveの**実際のSHA、ファイルID、現行コード**を更新前に再照合し、配送完了・実機合格は証拠があるときのみ記す。署名秘密鍵は公開・出力しない。
+
+
+
+

@@ -1,7 +1,22 @@
-# Windows版ビルド・配送計画（実行前ドラフト）
-**Windows版未実装。今回の作業ではビルドも配布も実施しない。**
-技術選定後、GitHub Actions `windows-latest` に依存バージョンを固定し、プロトコルテスト/GUI起動試験/署名・マルウェア対策の確認を行う。
-PySide6採用ならPyInstaller成果物(EXE/zip またはインストーラ)のサイズ、必要ランタイム、署名、Defender誤警告の実機検証。MSI/MSIXなども候補。Windows起動時の自動起動はユーザー許可制。
-コミットSHA→workflow run ID→artifact ID→成果物→Windows専用のDrive固定ID→再取得サイズ/ハッシュ一致で配送確認。**既存のAndroid版Drive ID 1QFFoHsyjE6MmXe023jpEzW29KMTX4oLNも、Nearby GamesのIDも使わない。**
-新規配布先が確定するまで別アプリのファイルを上書きしない。デバッグ成果物と一般配布版を混同しない。
-共通参照: xiaqui/wolf-chess/docs/APK_ARTIFACT_DELIVERY_GUIDE_JA.md, APK_DELIVERY_JA.md, BUILD_DELIVERY_COMPLETION_LOOP_JA.md（APK固有部分はWindows用に読み替え）。
+# Windows build and Release delivery
+
+The Windows client is implemented. Current verified SHAs, CI runs, releases, assets, and remaining device checks are recorded in `docs/WORK_PROGRESS.md`.
+
+## Build
+
+Use the repository's existing Windows workflow. Pin dependencies and run protocol/core tests, GUI or smoke checks, Ruff, PyInstaller packaging, and `--version` verification as configured. Keep Windows packaging separate from Android signing material. Code-signing and Defender behavior must be reported as verified or unverified rather than assumed.
+
+## Release
+
+The current distribution path publishes the packaged Windows ZIP/EXE directly to a GitHub Release from the approved source SHA; it does not depend on Actions artifact storage. Verify:
+
+1. final source SHA and workflow run;
+2. release/tag and exact asset name;
+3. re-downloaded file size and SHA-256;
+4. archive contents and executable version;
+5. any available Windows device/smoke result.
+
+Do not use an Android delivery destination for Windows files. Any external fixed destination requires separate repository configuration and authorization; its ID, URL, and credentials must not be committed.
+
+A successful build, published Release, external delivery, and Windows/Android interoperability acceptance are separate completion states.
+
