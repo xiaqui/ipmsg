@@ -1,3 +1,15 @@
+# M6-2 device acceptance follow-up (2026-10-24 JST)
+
+- Basic operation was confirmed on the Android 6–10 test-device range. Android-to-Android file transfer and multi-file transfer succeeded in practical use. This does not constitute acceptance of every Android version or transfer condition.
+- Windows ↔ Android 7 file transfer succeeded in both directions on the tested devices. Other Windows/device combinations remain separate acceptance items.
+- Android's system document picker exited once while receiving a file with a Japanese filename. This was not confirmed as an IP Messenger process crash and has not been reproduced reliably.
+- With a local VPN/firewall enabled, peer discovery could still succeed while message/file delivery failed. Treat UDP discovery and TCP delivery as separate paths; the root cause remains unconfirmed.
+- PR #32 suppressed duplicate notifications caused by repeated FILE_OFFER delivery. Device acceptance of a build containing that fix was not established by this observation alone.
+- One JPEG transfer produced destination-specific WAITING_ACCEPT / QUEUED / IO_ERROR states, then later succeeded without changing the file bytes. The failure is currently non-reproducible; do not infer corrupt image content or a permanent JPEG-specific defect.
+- Current assessment: basic send/receive and multi-select transfer are usable. Intermittent IO_ERROR, the one-off document-picker exit, and VPN/firewall constraints remain investigation items. Preserve the working transfer path unless a reproducible failure identifies a concrete defect.
+
+---
+
 # M6-2 レビュー修正・統合記録（2026-10-23 JST）
 
 - 実装PR [#29](https://github.com/xiaqui/ipmsg/pull/29) はコードレビューP1 4件／P2 2件を修正し、最終HEAD `1ef1dc694a16aae67fa77ea60cb80f80bb137a9c` に対するAndroid CI [39832824891](https://github.com/xiaqui/ipmsg/actions/runs/39832824891) とWindows CI [39832824599](https://github.com/xiaqui/ipmsg/actions/runs/39832824599) はどちらも成功。6件のレビューコメントに修正内容を返信し、6つのスレッドを解決済み。
