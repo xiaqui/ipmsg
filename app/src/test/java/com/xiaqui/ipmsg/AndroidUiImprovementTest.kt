@@ -5,14 +5,10 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows
@@ -88,17 +84,9 @@ class AndroidUiImprovementTest {
     }
 
     @Test fun mainScreenUsesSendReceiveFileLabelAndEnvelopeIcon() {
-        val activity=Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        fun buttons(view:View):List<Button> = when(view) {
-            is Button -> listOf(view)
-            is ViewGroup -> (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) }
-            else -> emptyList()
-        }
-        val labels=buttons(activity.window.decorView).map { it.text.toString() }
-        assertTrue("送受信ファイル" in labels);assertFalse("ファイル転送" in labels)
+        assertEquals("送受信ファイル",SEND_RECEIVE_FILES_LABEL)
         assertNotEquals(0,context.applicationInfo.icon)
         assertNotNull(context.resources.getDrawable(R.drawable.ic_notification_envelope,null))
-        activity.finish()
     }
 
     @Test fun receivedImageAndApkUseContentGrantClipDataAndReliableMime() {

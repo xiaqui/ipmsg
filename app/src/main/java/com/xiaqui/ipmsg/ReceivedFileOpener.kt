@@ -14,8 +14,11 @@ object ReceivedFileOpener {
         if(name.substringAfterLast('.',"").equals("apk",true)) return APK_MIME
         val provider=runCatching { resolver.getType(uri) }.getOrNull().orEmpty()
         val extension=name.substringAfterLast('.',"")
-        val byName=extension.takeIf { it.isNotEmpty() }
-            ?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.lowercase()) }.orEmpty()
+        val byName=when(extension.lowercase()) {
+            "jpg","jpeg" -> "image/jpeg"
+            else -> extension.takeIf { it.isNotEmpty() }
+                ?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.lowercase()) }.orEmpty()
+        }
         return listOf(provider,byName,offered).firstOrNull {
             it.isNotBlank()&&it!="application/octet-stream"&&it.contains('/')
         } ?: "application/octet-stream"

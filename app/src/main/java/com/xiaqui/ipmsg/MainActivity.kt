@@ -21,6 +21,8 @@ import android.net.Uri
 import android.graphics.Typeface
 import android.content.ActivityNotFoundException
 
+internal const val SEND_RECEIVE_FILES_LABEL="送受信ファイル"
+
 class MainActivity : Activity() {
     private lateinit var store: Store
     private lateinit var pair: KeyPair
@@ -87,7 +89,7 @@ class MainActivity : Activity() {
         root.addView(button("ファイルを選んで送信") { pickFiles() })
         root.addView(button("受信箱") { history(true) })
         root.addView(button("送信履歴・保留") { history(false) })
-        root.addView(button("送受信ファイル") { fileTransfers() })
+        root.addView(button(SEND_RECEIVE_FILES_LABEL) { fileTransfers() })
         root.addView(button("設定・端末承認") { settings() })
         root.addView(button("LAN診断") { showLanDiagnostics() })
         if(intent.getBooleanExtra("inbox",false)) history(true)
@@ -217,7 +219,7 @@ class MainActivity : Activity() {
             "$direction ${transfer.peerName} [${transfer.state}]\n${files.joinToString("、") { it.name }}\n$done / $total bytes"+
                 if(transfer.error.isEmpty()) "" else "\n${transfer.error}"
         }.toTypedArray()
-        AlertDialog.Builder(this).setTitle("送受信ファイル").setItems(labels) { _,index -> showTransfer(transfers[index]) }
+        AlertDialog.Builder(this).setTitle(SEND_RECEIVE_FILES_LABEL).setItems(labels) { _,index -> showTransfer(transfers[index]) }
             .setNegativeButton("閉じる",null).show()
     }
     private fun showTransfer(transfer:Transfer) {
