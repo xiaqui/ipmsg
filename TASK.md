@@ -1,64 +1,67 @@
-# Current task — Android UI polish (2026-11-07 JST)
+# 現在のタスク：Android UI改善（2026-11-07 JST）
 
-## Scope and authorization
+## 対象・作業範囲
 
-Next implementation task: improve the existing **Android** IP Messenger UI without changing LAN protocol, identity, encryption, message/file-transfer semantics, persisted user data, or Windows interoperability. This file records the task only; implementation, build, release, and device acceptance have not yet been performed.
+次の開発タスクは、既存の **Android版 IP MessengerのUI改善** とする。LAN通信プロトコル、端末ID・鍵、暗号化、メッセージ／ファイル転送の意味、保存済みユーザーデータ、Windows版との互換性を維持する。
 
-M0–M6-2 and Release-label correction are already merged. Do **not** rerun those milestones. Inspect current main, AGENTS.md, open PRs/issues, source, protocol contracts, docs/WORK_PROGRESS.md, and delivery workflow before implementing. Use a feature branch and PR; review and test the final head. Do not claim merge, APK delivery, or device acceptance without evidence.
+本書は実装指示の登録であり、**実装・ビルド・配送・実機検収の完了を意味しない**。
 
-## Required changes (in order)
+M0〜M6-2およびReleaseラベル修正はマージ済み。これらを再実行しない。着手前に最新main、AGENTS.md、open PR/Issue、関連実装、プロトコル正本、docs/WORK_PROGRESS.md、現行配送フローを確認する。実装は機能ブランチとPRで行い、最終headをレビュー・テストする。検証証跡のないマージ・APK配送・実機合格を報告しない。
 
-### 1. Receiver notification: pause/resume without opening the app
+## 実装項目（順序）
 
-- Add an action to the Android ongoing foreground-service notification to stop/pause LAN reception, and a one-tap way to resume from a notification while stopped. Do not conflate transient service failure with user-requested pause.
-- Make the receiver status and action text short enough for compact notifications; no reliance on the truncated current text `LAN受信を有効にしています。停止はアプリの設定から`.
-- Keep the existing Settings receiver-enable switch in sync with notification actions. Specify clearly whether pause survives app restarts/device reboot: **manual pause must not silently auto-resume**. Restore reception only after explicit user action; preserve existing normal enabled-at-boot behavior for users who have not paused.
-- Android may remove an ordinary stopped-service notification; design the resumed entry point accordingly, e.g. a safe persistent paused-state notification if feasible or another unambiguous one-tap entry. Do not promise a notification action that OS restrictions make impossible.
-- Use explicit/immutable or appropriately mutable PendingIntent flags and non-exported components. Avoid background foreground-service start violations across supported Android API levels. If the notification action cannot safely restart directly on some API levels, open a clearly labeled resume UI instead.
-- Do not interrupt in-flight message/file transfers silently; establish and test a deterministic cancellation/pause behavior with no duplicate sends or invalid delivered status.
+### 1. 通知から待受を一時停止・再開
 
-### 2. Rename the file history entry
+- Androidの常駐通知にLAN受信の「一時停止」操作を設け、停止状態からも通知などの明確な入口でワンタップ再開できるようにする。利用者の一時停止とサービスの異常停止を区別する。
+- 現状の通知本文「LAN受信を有効にしています。停止はアプリの設定から」は省略表示されるため、コンパクト表示でも状態と操作が分かる短い文言にする。
+- 設定画面の「常駐受信を有効にする」と通知操作の状態を同期する。**明示的な一時停止がアプリ再起動・端末再起動で勝手に解除されない**ようにする。再開には利用者の明示操作を必要とし、停止していない利用者に対する既存の起動時受信復帰は維持する。
+- フォアグラウンドサービス停止時には通常の常駐通知も消えることがある。停止中通知の維持など可能な方式を検証し、OS制約上実現できない操作を提供済みと扱わない。
+- PendingIntentの明示性・immutable/mutable指定、非公開コンポーネント、Android APIごとのバックグラウンドFGS起動制限を適切に扱う。通知から直接再起動できないOSでは、再開操作が明確な画面を開く等の安全な代替を設ける。
+- 進行中のメッセージ／ファイル転送を黙って破壊しない。停止時の確定的な中断／再開動作を定義・テストし、重複配送や誤った到着済み判定を防ぐ。
 
-- On the Android main screen change the existing `ファイル転送` button label to exactly **`送受信ファイル`**.
-- Keep its existing `fileTransfers()` destination, showing both sent and received files, pending transfers and completed-file actions. **Do not** replace it with a receive-only view.
-- Retain `ファイルを選んで送信` as the actual sending entry point, unless a separately reviewed UX simplification explicitly changes only its label. Preserve its multi-file selection and destination validation.
-- Update relevant dialog/accessible labels and UI tests for clarity where appropriate.
+### 2. 「ファイル転送」ボタンを「送受信ファイル」に変更
 
-### 3. Live status in sent-message history
+- Androidのメイン画面の既存ボタン「ファイル転送」を、**「送受信ファイル」** に変更する。
+- 遷移先の `fileTransfers()` はそのまま維持し、送信・受信の双方、転送待ち、転送状況、受信完了ファイルの操作を扱う。受信専用画面にしない。
+- 実際の送信操作である「ファイルを選んで送信」は維持する。独立に妥当性を確認した文言調整以外で送信動作を変えない。複数ファイル選択と宛先検証を壊さない。
+- 必要に応じてダイアログ見出し・アクセシビリティ表示・UIテストの文言も整合させる。
 
-- While the sent-message history is visible, refresh each message's current status (pending/retry count vs authenticated delivered ACK) without requiring the dialog to be closed and reopened.
-- Make status and message body visually distinguishable. Stop periodic updates when the UI is dismissed/paused; prevent leaks, selection loss, excessive DB reads, and stale callbacks. Do not claim a read receipt; existing ACK is *delivery*, not *opened*.
-- Preserve per-recipient statuses and history copy/delete/reply workflows.
+### 3. 送信履歴の状態を表示中に自動更新
 
-### 4. App icon
+- 送信履歴を開いたままでも、保留／再送回数から、認証済みACKによる到着確認済みへの変化を更新表示する。
+- 状態と本文を見分けやすくする。履歴画面の終了・一時停止時には更新を止め、リーク、選択位置の消失、過剰なDBアクセス、古いコールバックの反映を防ぐ。
+- ACKは**到着確認**であり開封・既読確認ではない。表記を混同しない。
+- 宛先ごとの状態、履歴コピー・削除・返信などの既存操作を維持する。
 
-- Replace the generic Android application/launcher icon with an envelope **✉️-inspired** app icon aligned with the existing notification imagery, remaining recognizable on Android 6–10 and newer supported versions.
-- Provide proper density resources or compatible adaptive/legacy resources as needed; do not use a text emoji glyph dependent on device font. Preserve notification small-icon readability and Android 6 compatibility.
-- No new branding changes outside ipmsg.
+### 4. ✉️をモチーフにしたアプリアイコン
 
-### 5. Open completed received files reliably (device-dependent failure)
+- 汎用のAndroidアプリアイコンを、通知の封筒イメージと統一した**✉️モチーフの専用アイコン**に変更する。
+- Android 6〜10および現在対応する新しいOSで識別できるよう、必要な密度別リソース、レガシー／アダプティブ形式を整える。端末フォント依存の絵文字文字列をそのままアイコンにしない。
+- 通知の小アイコンの視認性とAndroid 6互換性を維持する。他アプリのブランド変更は行わない。
 
-- Reported device observations (not yet independently reproduced in the current build): on Rakuten Hand, a received image opened after selecting Photos; on Xperia Ace, a received image offered "Google" as a handler but selecting it appeared to do nothing, and tapping a completed received APK did not launch the package installer. The **file list itself appears**; the failure occurs after choosing a file. Record the exact Ace model/Android version, MIME, saved URI scheme/provider, target app, and APK/source SHA when reproducing; do not assume a universal OS defect or blame the handler app without evidence.
-- Inspect `MainActivity.showTransfer()` and the save path recorded for completed incoming files. Audit `ACTION_VIEW`, stored `finalPath` URI, actual MIME vs extension, persisted access permissions, `FLAG_GRANT_READ_URI_PERMISSION`, clip data / intent chooser behavior where needed, and provider visibility/availability across API 23–29+.
-- Use the saved file's genuine accessible `content://` URI when available. If a path requires safe sharing, expose it through a tightly scoped `FileProvider` or other appropriate provider with temporary read grants. **Never** expose unrestricted `file://` URIs or weaken app-private storage. Do not silently copy or install files.
-- For APKs, hand off to Android's supported package installation flow only on explicit user selection. Verify installer intent MIME (`application/vnd.android.package-archive`), URI grants, relevant API-level restrictions, and Android's user-confirmation / unknown-app-source permissions. Do not request broad install privileges or bypass OS protection.
-- Distinguish "no suitable viewer", "file/URI missing or unreadable", "permission denied", and "handler launched but did not display" where observable. Provide actionable feedback, and an explicit safe "share/open with" alternative if justified. An `ActivityNotFoundException` catch alone is insufficient proof that opening worked.
-- Preserve successful Hand image opening, multi-file selection, completed-file records, integrity checks, Windows interoperability and the wire protocol; this is a local Android file-opening/UI compatibility fix, not a transfer-protocol rewrite.
+### 5. 受信済みファイルの「選んで開く」が端末により動作しない問題
 
-## Validation and acceptance
+- **社長の実機観測（新版ビルドでの独立再現は未実施）：** Rakuten Handでは受信画像を選ぶと「フォト」が候補に出て開けた。一方Xperia Aceでは受信画像に「Google」が候補として表示されるが、選んでも無反応。受信APKもパッケージインストーラが起動しなかった。**一覧表示までは正常で、ファイル選択後に問題が発生**している。端末／OS／保存先・URI／MIME／処理アプリ／APKのsource SHAを再現時に記録し、OSや処理アプリの不具合と早計に断定しない。
+- `MainActivity.showTransfer()` と受信完了ファイルの保存先管理を調査する。具体的には `ACTION_VIEW`、保存された `finalPath` のURI、MIMEタイプと拡張子の一致、永続・一時アクセス権限、`FLAG_GRANT_READ_URI_PERMISSION`、必要時のClipData／chooser、URI提供元と閲覧アプリのAPI 23〜29以降での互換性を検証する。
+- 保存先が有効な `content://` URIなら正しく利用する。安全な共有が必要な保存形態では、公開範囲を限定した `FileProvider` 等で一時読取権限を与える。無制限の `file://` 公開、アプリ内保存領域の権限緩和、無断コピー・無断インストールは行わない。
+- APKは利用者が明示的に開く操作をした場合にのみ、Android標準のインストール手順へ適切に引き渡す。MIME `application/vnd.android.package-archive`、URI権限、API別制約、不明なアプリのインストール許可および利用者確認を検証する。保護の迂回や広すぎるインストール権限の取得をしない。
+- 観測可能な範囲で「対応アプリなし」「ファイル・URIにアクセス不能」「権限不足」「処理アプリを起動したが表示されない」を区別し、実用的なエラー表示を行う。必要なら安全な「他のアプリで開く／共有」を提供する。`ActivityNotFoundException` を捕捉するだけでは成功確認にならない。
+- Handで成功した画像表示、複数ファイル選択、受信履歴、整合性確認、Windowsとの互換性、通信プロトコルを維持する。**Androidローカルのファイルを開くUIの互換性改善**であり、ファイル転送プロトコルの改造は対象外。
 
-- Run applicable Android unit/UI tests, lint, assemble, `git diff --check`, and CI for final PR head. Include regression checks for settings/notification pause-resume synchronization, boot behavior, action PendingIntents and API boundaries (especially 23/26/29/33+), history updates/dismissal, launcher icon packaging, completed received image/APK opening and URI permissions, and unchanged message/file-transfer behaviors.
-- Confirm no Android–Windows protocol or storage incompatibility. No Windows implementation changes are authorized.
-- Separate automated checks from actual physical device acceptance. Focus device checks on Z3TC Android 6, Z4T Android 7, XZ1 Compact Android 8, Rakuten Mini Android 9, Hand/other Android 10, as available; prioritize notification action behavior, restart, pause, background/screen-off, history refresh, icon, and completed-file open behavior (especially Hand success versus Ace failure).
-- Independent review: P0/P1 must be fixed before merge; fix or explicitly dispose of P2. Review must cover any security/performance/background-execution implications.
-- Follow the current repository Release-based APK distribution process if a build is requested. Do not overwrite a fixed Google Drive APK or use another app's destination without explicit authorization. Verify final source SHA, tests, release asset hash/signature, and clearly report outstanding device tests.
-- Update `docs/WORK_PROGRESS.md` with verified results and remaining work.
+## テスト・レビュー・検収条件
 
-## Out of scope / backlog (do not implement in this task)
+- Androidの関連単体／UIテスト、Lint、assemble、`git diff --check`、最終PR headのCIを実施する。通知と設定の同期、停止後再起動・端末起動時挙動、PendingIntent、API境界（特に23/26/29/33以降）、履歴更新と終了処理、アイコンの同梱、受信画像／APKのURI権限と起動、既存メッセージ／ファイル転送の回帰を含める。
+- Android／Windowsの通信プロトコルと保存データの互換性を確認する。今回Windows版の実装修正は行わない。
+- 自動テストと実機検収を分ける。利用可能なZ3TC（Android 6）、Z4T（7）、XZ1 Compact（8）、Rakuten Mini（9）、Hand／その他Android 10機で、通知停止・再開、再起動、バックグラウンド・消灯、履歴更新、アイコン、ファイルを開く操作を重点確認する。**特にHand成功・Ace失敗の差分**を検証する。
+- 独立レビューを実施し、P0/P1はマージ前に解消する。P2も修正するか理由を記録する。セキュリティ、性能、バックグラウンド動作への影響を点検する。
+- APKビルド・配送が依頼された場合はrepoの現行Releaseベースの手順に従う。明示許可なくGoogle Driveの固定APKや他アプリの配送先を上書きしない。最終source SHA、テスト、Release assetのhash・署名を検証し、未実施の実機検収を明記する。
+- 確認できたPR・SHA・検証結果・残課題を `docs/WORK_PROGRESS.md` に追記する。
 
-- M7: important sealed letters, opening acknowledgement, quick reply.
-- M8: iOS native client.
-- M9: household broadcast and timed sealed letters.
-- Nearby Games invitation integration and Android/browser LAN bridge.
-- Intermittent file transfer IO_ERROR, one-off Japanese-filename document picker exit, VPN/firewall interaction, and extended transfer/device combinations remain reproduction or device-verification items. Do not change the functioning transfer protocol without a reproducible issue and separately scoped task.
-- Android home-screen quick-post widget is a future idea, not part of the present five-item UI task.
+## 今回の対象外・将来TODO
+
+- M7：重要便（開封まで覆う封書）、開封確認、簡単返信。
+- M8：iOSネイティブ版。
+- M9：家庭内放送、時限封書。
+- Nearby Games招待連携、Android／ブラウザLANブリッジ。
+- まれなファイル転送IO_ERROR、日本語ファイル名での保存画面終了（一度だけ観測）、VPN／ファイアウォールによる通信制約、大容量転送および他機種の追加検収は、再現調査・検収課題として維持する。再現性と独立した作業指示なしに正常な通信プロトコルを改変しない。
+- Androidホーム画面のクイック投函ウィジェットは将来構想。今回の5項目には含めない。
