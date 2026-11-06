@@ -12,11 +12,16 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.view.View
+import android.view.ViewGroup
 import android.widget.*
 import java.text.DateFormat
 import java.util.Date
 import java.security.KeyPair
 import android.net.Uri
+import android.graphics.Typeface
+import android.content.ActivityNotFoundException
+
+internal const val SEND_RECEIVE_FILES_LABEL="送受信ファイル"
 
 class MainActivity : Activity() {
     private lateinit var store: Store
@@ -30,6 +35,10 @@ class MainActivity : Activity() {
     private lateinit var selfButton: Button
     private val selected = linkedSetOf<String>()
     private val handler = Handler(Looper.getMainLooper())
+    private val historyRefreshers = linkedSetOf<Runnable>()
+    private var foreground = false
+    private var receiverSwitch: Switch? = null
+    private var syncingReceiverSwitch = false
     private val prefs by lazy { getSharedPreferences("settings",MODE_PRIVATE) }
     private var rendered = ""
     private var pendingTreeTransfer: Transfer? = null
@@ -80,7 +89,7 @@ class MainActivity : Activity() {
         root.addView(button("ファイルを選んで送信") { pickFiles() })
         root.addView(button("受信箱") { history(true) })
         root.addView(button("送信履歴・保留") { history(false) })
-        root.addView(button("ファイル転送") { fileTransfers() })
+        root.addView(button(SEND_RECEIVE_FILES_LABEL) { fileTransfers() })
         root.addView(button("設定・端末承認") { settings() })
         root.addView(button("LAN診断") { showLanDiagnostics() })
         if(intent.getBooleanExtra("inbox",false)) history(true)
@@ -92,10 +101,18 @@ class MainActivity : Activity() {
     }
     override fun onResume() {
         super.onResume()
-        if(prefs.getBoolean("enabled",false) && !MessengerService.active) startReceiver()
+        foreground=true
+        syncingReceiverSwitch=true
+        receiverSwitch?.isChecked=ReceiverState.enabled(this)
+        syncingReceiverSwitch=false
+        if(ReceiverState.enabled(this) && !MessengerService.active) startReceiver()
         handler.post(refresh)
+        historyRefreshers.forEach(handler::post)
     }
-    override fun onPause() { handler.removeCallbacks(refresh);super.onPause() }
+    override fun onPause() {
+        foreground=false;handler.removeCallbacks(refresh);historyRefreshers.forEach(handler::removeCallbacks)
+        super.onPause()
+    }
     override fun onDestroy() { store.close();super.onDestroy() }
     private fun startReceiver() {
         try { MessengerService.start(this) }
@@ -107,7 +124,8 @@ class MainActivity : Activity() {
         selected.retainAll(peers.filter { it.trusted }.map { it.id }.toSet()+self)
         val now=System.currentTimeMillis()
         stateView.text=if(MessengerService.active) MessengerService.engine?.status ?: "受信準備中"
-            else MessengerService.problem.ifEmpty { "受信停止中：設定から受信を開始してください" }
+            else if(ReceiverState.paused(this)) "LAN受信は一時停止中です" else
+                MessengerService.problem.ifEmpty { "受信停止中：設定から受信を開始してください" }
         if(Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
             stateView.append("\n通知が無効です。設定から許可してください")
         val stamp=peers.joinToString { it.id+it.name+it.trusted+it.online(now) }+selected.toString()
@@ -201,7 +219,7 @@ class MainActivity : Activity() {
             "$direction ${transfer.peerName} [${transfer.state}]\n${files.joinToString("、") { it.name }}\n$done / $total bytes"+
                 if(transfer.error.isEmpty()) "" else "\n${transfer.error}"
         }.toTypedArray()
-        AlertDialog.Builder(this).setTitle("ファイル転送").setItems(labels) { _,index -> showTransfer(transfers[index]) }
+        AlertDialog.Builder(this).setTitle(SEND_RECEIVE_FILES_LABEL).setItems(labels) { _,index -> showTransfer(transfers[index]) }
             .setNegativeButton("閉じる",null).show()
     }
     private fun showTransfer(transfer:Transfer) {
@@ -225,11 +243,43 @@ class MainActivity : Activity() {
                 val completed=files.filter { it.finalPath.isNotEmpty() }
                 AlertDialog.Builder(this).setTitle("開くファイル").setItems(completed.map { it.name }.toTypedArray()) { _,index ->
                     val file=completed[index]
-                    runCatching { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(file.finalPath),file.mime)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }.onFailure { toast("対応するアプリがありません") }
+                    openReceivedFile(file)
                 }.setNegativeButton("閉じる",null).show()
             }
         builder.show()
+    }
+    internal fun openReceivedFile(file:TransferFile) {
+        val uri=runCatching { Uri.parse(file.finalPath) }.getOrNull()
+        if(uri==null||uri.scheme!=ContentResolver.SCHEME_CONTENT) {
+            toast("保存先URIが無効です。受信履歴から保存状態を確認してください");return
+        }
+        val readable=runCatching { contentResolver.openFileDescriptor(uri,"r")?.use { true } ?: false }
+        if(readable.getOrDefault(false).not()) {
+            toast("ファイルにアクセスできません。保存先の権限またはファイルの移動を確認してください");return
+        }
+        val mime=ReceivedFileOpener.mime(contentResolver,uri,file.name,file.mime)
+        if(ReceivedFileOpener.needsInstallerPermission(mime,Build.VERSION.SDK_INT,
+                Build.VERSION.SDK_INT<26||packageManager.canRequestPackageInstalls())) {
+            AlertDialog.Builder(this).setTitle("APKを開くには許可が必要です")
+                .setMessage("Androidの設定で、このIP Messengerからの不明なアプリのインストールを許可してください。自動ではインストールしません。許可後にもう一度ファイルを選んでください。")
+                .setNegativeButton("キャンセル",null).setPositiveButton("設定を開く") { _,_ ->
+                    runCatching { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName"))) }
+                        .onFailure { toast("端末の設定から不明なアプリの許可を確認してください") }
+                }.show();return
+        }
+        val view=ReceivedFileOpener.viewIntent(contentResolver,uri,file.name,file.mime)
+        val chooser=ReceivedFileOpener.chooser(view,file.name)
+        try {
+            startActivity(chooser)
+            toast("処理アプリへファイルを渡しました。表示されない場合は別の対応アプリを選んでください")
+        } catch(_:ActivityNotFoundException) {
+            toast("このファイル形式に対応するアプリがありません")
+        } catch(_:SecurityException) {
+            toast("処理アプリへ読取権限を渡せませんでした。保存先を確認してください")
+        } catch(_:RuntimeException) {
+            toast("ファイルを開けませんでした。保存先と対応アプリを確認してください")
+        }
     }
     private fun fingerprint(id: String) = id.chunked(4).joinToString(" ")
     private fun approve(peer: Peer) {
@@ -239,22 +289,26 @@ class MainActivity : Activity() {
                 store.trust(peer.id,true);rendered="";renderPeers()
             }.show()
     }
-    private fun history(incoming: Boolean) {
-        val letters=store.letters(incoming)
-        val labels=letters.map {
-            DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(Date(it.created))+
-                " "+it.name+"\n"+(if(incoming) "到着" else if(it.state=="DELIVERED") "到着確認済み" else "保留／再送待ち（"+it.attempts+"回）")+
-                " "+it.body.take(45)
-        }.toTypedArray()
-        AlertDialog.Builder(this).setTitle(if(incoming) "受信箱" else "送信履歴")
-            .setItems(labels) { _,index ->
-                val letter=letters[index]
-                showLetter(letter)
-            }.setNegativeButton("閉じる",null)
-            .setNeutralButton("保留を再送") { _,_ ->
-                MessengerService.engine?.wake() ?: store.retry()
-                toast("承認済みの相手へ、探索と安全な再送を試します")
-            }.show()
+    internal fun history(incoming: Boolean) {
+        val list=ListView(this);val adapter=HistoryAdapter(this,incoming);list.adapter=adapter
+        val builder=AlertDialog.Builder(this).setTitle(if(incoming) "受信箱" else "送信履歴")
+            .setView(list).setNegativeButton("閉じる",null)
+        if(!incoming) builder.setNeutralButton("保留を再送") { _,_ ->
+            MessengerService.engine?.wake() ?: store.retry()
+            toast("承認済みの相手へ、探索と安全な再送を試します")
+        }
+        val dialog=builder.create()
+        lateinit var refresher:Runnable
+        refresher=Runnable {
+            if(!dialog.isShowing||!foreground) return@Runnable
+            val first=list.firstVisiblePosition
+            val top=if(list.childCount>0) list.getChildAt(0).top else 0
+            if(adapter.replace(store.letters(incoming))) list.setSelectionFromTop(first,top)
+            handler.postDelayed(refresher,1500)
+        }
+        list.setOnItemClickListener { _,_,position,_ -> adapter.getItem(position)?.let(::showLetter) }
+        dialog.setOnDismissListener { handler.removeCallbacks(refresher);historyRefreshers.remove(refresher) }
+        dialog.show();historyRefreshers.add(refresher);handler.post(refresher)
     }
     internal fun showLetter(letter: Letter) {
         val box=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL;setPadding(24,8,24,8) }
@@ -325,18 +379,18 @@ class MainActivity : Activity() {
         val edit=EditText(this).apply { setText(name());hint="この端末の名前" };box.addView(edit)
         box.addView(text("この端末の指紋（相手側の承認画面と全桁を照合）\n"+fingerprint(self),14f))
         box.addView(text("Wi-Fi内で直接通信します。ゲストWi-Fiの端末間分離では接続できません。消灯中の受信はOSや省電力設定の影響を受けます。",14f))
-        box.addView(Switch(this).apply {
+        val receiverToggle=Switch(this).apply {
             text="常駐受信を有効にする（再起動後も再開）"
-            isChecked=prefs.getBoolean("enabled",false)
+            isChecked=ReceiverState.enabled(this@MainActivity)
             setOnCheckedChangeListener { _,enabled ->
-                prefs.edit().putBoolean("enabled",enabled).apply()
-                if(enabled) startReceiver() else {
-                    store.offline()
-                    stopService(Intent(this@MainActivity,MessengerService::class.java))
-                }
+                if(syncingReceiverSwitch) return@setOnCheckedChangeListener
+                if(enabled) runCatching { MessengerService.resume(this@MainActivity) }
+                    .onFailure { toast("受信開始に失敗しました") }
+                else MessengerService.pause(this@MainActivity)
                 renderPeers()
             }
-        })
+        }
+        receiverSwitch=receiverToggle;box.addView(receiverToggle)
         if(Build.VERSION.SDK_INT>=33) box.addView(button("到着通知を許可") {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),10)
         })
@@ -349,12 +403,44 @@ class MainActivity : Activity() {
                 store.trust(peer.id,false);selected.remove(peer.id);rendered="";renderPeers();toast("承認を解除しました")
             })
         }
-        AlertDialog.Builder(this).setTitle("設定・端末承認")
+        val dialog=AlertDialog.Builder(this).setTitle("設定・端末承認")
             .setView(ScrollView(this).apply { addView(box) })
             .setPositiveButton("名前を保存") { _,_ ->
                 val value=edit.text.toString().trim().take(40)
                 if(value.isNotEmpty()) { prefs.edit().putString("name",value).apply();recreate() }
-            }.setNegativeButton("閉じる",null).show()
+            }.setNegativeButton("閉じる",null).create()
+        dialog.setOnDismissListener { if(receiverSwitch===receiverToggle) receiverSwitch=null }
+        dialog.show()
+    }
+}
+
+internal class HistoryAdapter(private val context:Context,private val incoming:Boolean):BaseAdapter() {
+    private var rows:List<Letter> = emptyList()
+    fun replace(values:List<Letter>):Boolean {
+        if(values==rows) return false
+        rows=values;notifyDataSetChanged();return true
+    }
+    override fun getCount()=rows.size
+    override fun getItem(position:Int)=rows.getOrNull(position)
+    override fun getItemId(position:Int)=position.toLong()
+    override fun getView(position:Int,convertView:View?,parent:ViewGroup?):View {
+        val letter=rows[position]
+        return LinearLayout(context).apply {
+            orientation=LinearLayout.VERTICAL;setPadding(24,14,24,14)
+            addView(TextView(context).apply {
+                text=DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(Date(letter.created))+
+                    "  "+letter.name+"  "+status(letter,incoming)
+                setTypeface(typeface,Typeface.BOLD)
+            })
+            addView(TextView(context).apply { text=letter.body.take(80);maxLines=2 })
+        }
+    }
+    companion object {
+        fun status(letter:Letter,incoming:Boolean)=when {
+            incoming -> "到着"
+            letter.state=="DELIVERED" -> "到着確認済み"
+            else -> "保留／再送待ち（${letter.attempts}回）"
+        }
     }
 }
 
