@@ -1,5 +1,5 @@
 name: Release Signed Android APK
-# Manual release requested for Android 6-8 colored online status PR #12; preserve signature and verification gates.
+# Main-only signed test prerelease; preserve signature, provenance, and re-download verification gates.
 
 on:
   workflow_dispatch:
