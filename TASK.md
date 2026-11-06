@@ -36,11 +36,20 @@ M0–M6-2 and Release-label correction are already merged. Do **not** rerun thos
 - Provide proper density resources or compatible adaptive/legacy resources as needed; do not use a text emoji glyph dependent on device font. Preserve notification small-icon readability and Android 6 compatibility.
 - No new branding changes outside ipmsg.
 
+### 5. Open completed received files reliably (device-dependent failure)
+
+- Reported device observations (not yet independently reproduced in the current build): on Rakuten Hand, a received image opened after selecting Photos; on Xperia Ace, a received image offered "Google" as a handler but selecting it appeared to do nothing, and tapping a completed received APK did not launch the package installer. The **file list itself appears**; the failure occurs after choosing a file. Record the exact Ace model/Android version, MIME, saved URI scheme/provider, target app, and APK/source SHA when reproducing; do not assume a universal OS defect or blame the handler app without evidence.
+- Inspect `MainActivity.showTransfer()` and the save path recorded for completed incoming files. Audit `ACTION_VIEW`, stored `finalPath` URI, actual MIME vs extension, persisted access permissions, `FLAG_GRANT_READ_URI_PERMISSION`, clip data / intent chooser behavior where needed, and provider visibility/availability across API 23–29+.
+- Use the saved file's genuine accessible `content://` URI when available. If a path requires safe sharing, expose it through a tightly scoped `FileProvider` or other appropriate provider with temporary read grants. **Never** expose unrestricted `file://` URIs or weaken app-private storage. Do not silently copy or install files.
+- For APKs, hand off to Android's supported package installation flow only on explicit user selection. Verify installer intent MIME (`application/vnd.android.package-archive`), URI grants, relevant API-level restrictions, and Android's user-confirmation / unknown-app-source permissions. Do not request broad install privileges or bypass OS protection.
+- Distinguish "no suitable viewer", "file/URI missing or unreadable", "permission denied", and "handler launched but did not display" where observable. Provide actionable feedback, and an explicit safe "share/open with" alternative if justified. An `ActivityNotFoundException` catch alone is insufficient proof that opening worked.
+- Preserve successful Hand image opening, multi-file selection, completed-file records, integrity checks, Windows interoperability and the wire protocol; this is a local Android file-opening/UI compatibility fix, not a transfer-protocol rewrite.
+
 ## Validation and acceptance
 
-- Run applicable Android unit/UI tests, lint, assemble, `git diff --check`, and CI for final PR head. Include regression checks for settings/notification pause-resume synchronization, boot behavior, action PendingIntents and API boundaries (especially 23/26/29/33+), history updates/dismissal, launcher icon packaging, and unchanged message/file-transfer behaviors.
+- Run applicable Android unit/UI tests, lint, assemble, `git diff --check`, and CI for final PR head. Include regression checks for settings/notification pause-resume synchronization, boot behavior, action PendingIntents and API boundaries (especially 23/26/29/33+), history updates/dismissal, launcher icon packaging, completed received image/APK opening and URI permissions, and unchanged message/file-transfer behaviors.
 - Confirm no Android–Windows protocol or storage incompatibility. No Windows implementation changes are authorized.
-- Separate automated checks from actual physical device acceptance. Focus device checks on Z3TC Android 6, Z4T Android 7, XZ1 Compact Android 8, Rakuten Mini Android 9, Hand/other Android 10, as available; prioritize notification action behavior, restart, pause, background/screen-off, history refresh, and icon.
+- Separate automated checks from actual physical device acceptance. Focus device checks on Z3TC Android 6, Z4T Android 7, XZ1 Compact Android 8, Rakuten Mini Android 9, Hand/other Android 10, as available; prioritize notification action behavior, restart, pause, background/screen-off, history refresh, icon, and completed-file open behavior (especially Hand success versus Ace failure).
 - Independent review: P0/P1 must be fixed before merge; fix or explicitly dispose of P2. Review must cover any security/performance/background-execution implications.
 - Follow the current repository Release-based APK distribution process if a build is requested. Do not overwrite a fixed Google Drive APK or use another app's destination without explicit authorization. Verify final source SHA, tests, release asset hash/signature, and clearly report outstanding device tests.
 - Update `docs/WORK_PROGRESS.md` with verified results and remaining work.
@@ -52,4 +61,4 @@ M0–M6-2 and Release-label correction are already merged. Do **not** rerun thos
 - M9: household broadcast and timed sealed letters.
 - Nearby Games invitation integration and Android/browser LAN bridge.
 - Intermittent file transfer IO_ERROR, one-off Japanese-filename document picker exit, VPN/firewall interaction, and extended transfer/device combinations remain reproduction or device-verification items. Do not change the functioning transfer protocol without a reproducible issue and separately scoped task.
-- Android home-screen quick-post widget is a future idea, not part of the present four-item UI task.
+- Android home-screen quick-post widget is a future idea, not part of the present five-item UI task.
