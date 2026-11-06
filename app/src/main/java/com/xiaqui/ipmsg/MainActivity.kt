@@ -12,6 +12,7 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.view.View
+import android.view.ViewGroup
 import android.widget.*
 import java.text.DateFormat
 import java.util.Date
@@ -34,6 +35,8 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val historyRefreshers = linkedSetOf<Runnable>()
     private var foreground = false
+    private var receiverSwitch: Switch? = null
+    private var syncingReceiverSwitch = false
     private val prefs by lazy { getSharedPreferences("settings",MODE_PRIVATE) }
     private var rendered = ""
     private var pendingTreeTransfer: Transfer? = null
@@ -49,7 +52,6 @@ class MainActivity : Activity() {
         store=Store(this)
         // RSA identity is generated once in Android Keystore and survives process/OS restarts.
         pair=Identity.load(); self=Protocol.id(pair.public)
-        handleResumeIntent(intent)
         savedInstanceState?.getStringArrayList("selected")?.let { selected.addAll(it) }
         val root = LinearLayout(this).apply {
             orientation=LinearLayout.VERTICAL
@@ -98,6 +100,9 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         foreground=true
+        syncingReceiverSwitch=true
+        receiverSwitch?.isChecked=ReceiverState.enabled(this)
+        syncingReceiverSwitch=false
         if(ReceiverState.enabled(this) && !MessengerService.active) startReceiver()
         handler.post(refresh)
         historyRefreshers.forEach(handler::post)
@@ -106,20 +111,10 @@ class MainActivity : Activity() {
         foreground=false;handler.removeCallbacks(refresh);historyRefreshers.forEach(handler::removeCallbacks)
         super.onPause()
     }
-    override fun onNewIntent(intent:Intent) {
-        super.onNewIntent(intent);setIntent(intent);handleResumeIntent(intent)
-    }
     override fun onDestroy() { store.close();super.onDestroy() }
     private fun startReceiver() {
         try { MessengerService.start(this) }
         catch(_: RuntimeException) { toast("受信開始に失敗しました。設定から再開してください") }
-    }
-    private fun handleResumeIntent(source:Intent) {
-        if(source.getBooleanExtra("resume_receiver",false)) {
-            source.removeExtra("resume_receiver")
-            runCatching { MessengerService.resume(this) }
-                .onFailure { toast("受信開始に失敗しました。設定から再開してください") }
-        }
     }
     private fun toast(value: String) { Toast.makeText(this,value,Toast.LENGTH_LONG).show() }
     private fun renderPeers() {
@@ -261,7 +256,8 @@ class MainActivity : Activity() {
             toast("ファイルにアクセスできません。保存先の権限またはファイルの移動を確認してください");return
         }
         val mime=ReceivedFileOpener.mime(contentResolver,uri,file.name,file.mime)
-        if(mime==ReceivedFileOpener.APK_MIME&&Build.VERSION.SDK_INT>=26&&!packageManager.canRequestPackageInstalls()) {
+        if(ReceivedFileOpener.needsInstallerPermission(mime,Build.VERSION.SDK_INT,
+                Build.VERSION.SDK_INT<26||packageManager.canRequestPackageInstalls())) {
             AlertDialog.Builder(this).setTitle("APKを開くには許可が必要です")
                 .setMessage("Androidの設定で、このIP Messengerからの不明なアプリのインストールを許可してください。自動ではインストールしません。許可後にもう一度ファイルを選んでください。")
                 .setNegativeButton("キャンセル",null).setPositiveButton("設定を開く") { _,_ ->
@@ -271,9 +267,7 @@ class MainActivity : Activity() {
                 }.show();return
         }
         val view=ReceivedFileOpener.viewIntent(contentResolver,uri,file.name,file.mime)
-        val chooser=Intent.createChooser(view,"${file.name} を開く").apply {
-            clipData=view.clipData;addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+        val chooser=ReceivedFileOpener.chooser(view,file.name)
         try {
             startActivity(chooser)
             toast("処理アプリへファイルを渡しました。表示されない場合は別の対応アプリを選んでください")
@@ -383,16 +377,18 @@ class MainActivity : Activity() {
         val edit=EditText(this).apply { setText(name());hint="この端末の名前" };box.addView(edit)
         box.addView(text("この端末の指紋（相手側の承認画面と全桁を照合）\n"+fingerprint(self),14f))
         box.addView(text("Wi-Fi内で直接通信します。ゲストWi-Fiの端末間分離では接続できません。消灯中の受信はOSや省電力設定の影響を受けます。",14f))
-        box.addView(Switch(this).apply {
+        val receiverToggle=Switch(this).apply {
             text="常駐受信を有効にする（再起動後も再開）"
             isChecked=ReceiverState.enabled(this@MainActivity)
             setOnCheckedChangeListener { _,enabled ->
+                if(syncingReceiverSwitch) return@setOnCheckedChangeListener
                 if(enabled) runCatching { MessengerService.resume(this@MainActivity) }
                     .onFailure { toast("受信開始に失敗しました") }
                 else MessengerService.pause(this@MainActivity)
                 renderPeers()
             }
-        })
+        }
+        receiverSwitch=receiverToggle;box.addView(receiverToggle)
         if(Build.VERSION.SDK_INT>=33) box.addView(button("到着通知を許可") {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),10)
         })
@@ -405,12 +401,14 @@ class MainActivity : Activity() {
                 store.trust(peer.id,false);selected.remove(peer.id);rendered="";renderPeers();toast("承認を解除しました")
             })
         }
-        AlertDialog.Builder(this).setTitle("設定・端末承認")
+        val dialog=AlertDialog.Builder(this).setTitle("設定・端末承認")
             .setView(ScrollView(this).apply { addView(box) })
             .setPositiveButton("名前を保存") { _,_ ->
                 val value=edit.text.toString().trim().take(40)
                 if(value.isNotEmpty()) { prefs.edit().putString("name",value).apply();recreate() }
-            }.setNegativeButton("閉じる",null).show()
+            }.setNegativeButton("閉じる",null).create()
+        dialog.setOnDismissListener { if(receiverSwitch===receiverToggle) receiverSwitch=null }
+        dialog.show()
     }
 }
 

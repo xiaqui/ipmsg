@@ -16,7 +16,7 @@ object ReceivedFileOpener {
         val extension=name.substringAfterLast('.',"")
         val byName=extension.takeIf { it.isNotEmpty() }
             ?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.lowercase()) }.orEmpty()
-        return listOf(provider,offered,byName).firstOrNull {
+        return listOf(provider,byName,offered).firstOrNull {
             it.isNotBlank()&&it!="application/octet-stream"&&it.contains('/')
         } ?: "application/octet-stream"
     }
@@ -30,4 +30,12 @@ object ReceivedFileOpener {
             addCategory(Intent.CATEGORY_DEFAULT)
         }
     }
+
+    fun chooser(view:Intent,name:String):Intent = Intent.createChooser(view,"$name を開く").apply {
+        clipData=view.clipData
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+
+    fun needsInstallerPermission(mime:String,sdk:Int,canRequestInstalls:Boolean)=
+        mime==APK_MIME && sdk>=26 && !canRequestInstalls
 }

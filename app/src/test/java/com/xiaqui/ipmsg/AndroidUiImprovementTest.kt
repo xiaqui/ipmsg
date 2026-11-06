@@ -1,6 +1,7 @@
 package com.xiaqui.ipmsg
 
 import android.app.Notification
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -14,6 +15,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -23,6 +25,7 @@ class AndroidUiImprovementTest {
     @Before fun setup() {
         context=RuntimeEnvironment.getApplication()
         context.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().clear().commit()
+        context.deleteDatabase("ipmsg.db")
     }
 
     @Test fun explicitPausePersistsUntilExplicitResume() {
@@ -43,6 +46,35 @@ class AndroidUiImprovementTest {
         val saved=org.robolectric.Shadows.shadowOf(action.actionIntent).savedIntent
         assertEquals(MessengerNotifications.ACTION_PAUSE,saved.action)
         assertEquals(PauseReceiver::class.java.name,saved.component?.className)
+
+        MessengerNotifications.showPaused(context)
+        val paused=Shadows.shadowOf(context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+            .getNotification(4)
+        assertEquals("IP Messenger：一時停止中",paused.extras.getString(Notification.EXTRA_TITLE))
+        val resume=paused.actions.single();assertEquals("再開",resume.title.toString())
+        val resumeIntent=Shadows.shadowOf(resume.actionIntent).savedIntent
+        assertEquals(MessengerNotifications.ACTION_RESUME,resumeIntent.action)
+        assertEquals(ResumeReceiver::class.java.name,resumeIntent.component?.className)
+    }
+
+    @Test fun bootPreservesManualPauseAndPendingDeliveryData() {
+        ReceiverState.pause(context)
+        BootReceiver().onReceive(context,Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertFalse(ReceiverState.enabled(context));assertTrue(ReceiverState.paused(context))
+
+        val store=Store(context)
+        try {
+            val peer=Peer("peer","相手","key",true,"192.0.2.1",1,true)
+            store.writableDatabase.execSQL("INSERT INTO peers VALUES(?,?,?,?,?,?,?)",
+                arrayOf(peer.id,peer.name,peer.key,1,peer.host,peer.seen,1))
+            store.enqueue(listOf(peer.id),"self","自分","保留本文",1)
+            store.createOutgoingTransfer("transfer",peer,listOf(FileMeta(
+                "00000000-0000-4000-8000-000000000001","photo.jpg","image/jpeg",0,FileContract.EMPTY_SHA)))
+            MessengerService.pause(context)
+            assertEquals("PENDING",store.letters(false).single().state)
+            assertEquals(0,store.letters(false).single().attempts)
+            assertEquals("QUEUED",store.transfer("transfer",peer.id,false).state)
+        } finally { store.close() }
     }
 
     @Test fun historyStatusChangesFromPendingToAuthenticatedArrival() {
@@ -56,7 +88,7 @@ class AndroidUiImprovementTest {
     }
 
     @Test fun mainScreenUsesSendReceiveFileLabelAndEnvelopeIcon() {
-        val activity=Robolectric.buildActivity(MainActivity::class.java).get()
+        val activity=Robolectric.buildActivity(MainActivity::class.java).setup().get()
         fun buttons(view:View):List<Button> = when(view) {
             is Button -> listOf(view)
             is ViewGroup -> (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) }
@@ -75,9 +107,16 @@ class AndroidUiImprovementTest {
         assertEquals(Intent.ACTION_VIEW,view.action);assertEquals("image/jpeg",view.type)
         assertEquals(image,view.data);assertEquals(image,view.clipData!!.getItemAt(0).uri)
         assertTrue(view.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+        val chooser=ReceivedFileOpener.chooser(view,"photo.JPG")
+        assertEquals(image,chooser.clipData!!.getItemAt(0).uri)
+        assertTrue(chooser.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
         val apk=ReceivedFileOpener.viewIntent(context.contentResolver,
             Uri.parse("content://documents/tree/root/document/app"),"update.APK","application/octet-stream")
         assertEquals(ReceivedFileOpener.APK_MIME,apk.type)
+        assertTrue(ReceivedFileOpener.needsInstallerPermission(apk.type!!,26,false))
+        assertFalse(ReceivedFileOpener.needsInstallerPermission(apk.type!!,25,false))
+        assertFalse(ReceivedFileOpener.needsInstallerPermission(apk.type!!,26,true))
+        assertEquals("image/jpeg",ReceivedFileOpener.mime(context.contentResolver,image,"photo.jpg","text/plain"))
         assertThrows(IllegalArgumentException::class.java) {
             ReceivedFileOpener.viewIntent(context.contentResolver,Uri.parse("file:///tmp/app.apk"),"app.apk",ReceivedFileOpener.APK_MIME)
         }

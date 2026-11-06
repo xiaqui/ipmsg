@@ -12,7 +12,7 @@
     <application android:allowBackup="false" android:label="${appLabel}"
         android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
-        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
+        <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -27,5 +27,6 @@
             </intent-filter>
         </receiver>
         <receiver android:name=".PauseReceiver" android:exported="false"/>
+        <receiver android:name=".ResumeReceiver" android:exported="false"/>
     </application>
 </manifest>

@@ -19,9 +19,15 @@ class MessengerService : Service() {
             if(Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
         }
         fun resume(context: Context) {
-            ReceiverState.resume(context)
-            MessengerNotifications.cancelPaused(context)
-            start(context)
+            check(ReceiverState.resume(context)) { "receiver state was not saved" }
+            try {
+                start(context)
+                MessengerNotifications.cancelPaused(context)
+            } catch(error:RuntimeException) {
+                ReceiverState.pause(context)
+                MessengerNotifications.showPaused(context)
+                throw error
+            }
         }
         fun pause(context: Context) {
             ReceiverState.pause(context)
@@ -40,6 +46,7 @@ class MessengerService : Service() {
         if(Build.VERSION.SDK_INT >= 29)
             startForeground(1,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         else startForeground(1,notification)
+        if(!ReceiverState.enabled(this)) { stopSelf();return }
         active = true; problem = ""
         init.execute {
             runCatching {
@@ -98,6 +105,13 @@ class PauseReceiver : BroadcastReceiver() {
         if(intent.action==MessengerNotifications.ACTION_PAUSE) MessengerService.pause(context)
     }
 }
+class ResumeReceiver : BroadcastReceiver() {
+    override fun onReceive(context:Context,intent:Intent) {
+        if(intent.action==MessengerNotifications.ACTION_RESUME)
+            runCatching { MessengerService.resume(context) }
+                .onFailure { MessengerNotifications.showPaused(context) }
+    }
+}
 
 object ReceiverState {
     private const val ENABLED="enabled"
@@ -111,6 +125,7 @@ object ReceiverState {
 
 object MessengerNotifications {
     const val ACTION_PAUSE="com.xiaqui.ipmsg.action.PAUSE_RECEIVER"
+    const val ACTION_RESUME="com.xiaqui.ipmsg.action.RESUME_RECEIVER"
     private const val PAUSED_ID=4
     fun ensureChannels(context:Context) {
         if(Build.VERSION.SDK_INT < 26) return
@@ -133,12 +148,12 @@ object MessengerNotifications {
     }
     fun showPaused(context:Context) {
         ensureChannels(context)
-        val resume=PendingIntent.getActivity(context,5,
-            Intent(context,MainActivity::class.java).putExtra("resume_receiver",true),
+        val resume=PendingIntent.getBroadcast(context,5,
+            Intent(context,ResumeReceiver::class.java).setAction(ACTION_RESUME),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification=NotificationCompat.Builder(context,"receiver")
             .setSmallIcon(R.drawable.ic_notification_envelope).setContentTitle("IP Messenger：一時停止中")
-            .setContentText("LAN受信は停止中・タップして再開")
+            .setContentText("LAN通信停止中・タップで再開")
             .setContentIntent(resume).addAction(R.drawable.ic_notification_envelope,"再開",resume)
             .setOngoing(true).build()
         try { NotificationManagerCompat.from(context).notify(PAUSED_ID,notification) }
