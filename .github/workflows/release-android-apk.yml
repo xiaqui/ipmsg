@@ -1,5 +1,6 @@
 name: Release Signed Android APK
 # Main-only signed test prerelease; preserve signature, provenance, and re-download verification gates.
+# One-time release refresh after repository signing secret rotation; application sources remain unchanged.
 
 on:
   workflow_dispatch:
