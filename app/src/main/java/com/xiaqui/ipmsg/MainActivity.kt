@@ -102,6 +102,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         foreground=true
+        LanRuntime.foreground(this,this,true)
         syncingReceiverSwitch=true
         receiverSwitch?.isChecked=ReceiverState.enabled(this)
         syncingReceiverSwitch=false
@@ -110,10 +111,11 @@ class MainActivity : Activity() {
         historyRefreshers.forEach(handler::post)
     }
     override fun onPause() {
+        LanRuntime.foreground(this,this,false)
         foreground=false;handler.removeCallbacks(refresh);historyRefreshers.forEach(handler::removeCallbacks)
         super.onPause()
     }
-    override fun onDestroy() { store.close();super.onDestroy() }
+    override fun onDestroy() { LanRuntime.foreground(this,this,false);store.close();super.onDestroy() }
     private fun startReceiver() {
         try { MessengerService.start(this) }
         catch(_: RuntimeException) { toast("受信開始に失敗しました。設定から再開してください") }
@@ -123,12 +125,13 @@ class MainActivity : Activity() {
         val peers=store.peers()
         selected.retainAll(peers.filter { it.trusted }.map { it.id }.toSet()+self)
         val now=System.currentTimeMillis()
-        stateView.text=if(MessengerService.active) MessengerService.engine?.status ?: "受信準備中"
-            else if(ReceiverState.paused(this)) "LAN受信は一時停止中です" else
-                MessengerService.problem.ifEmpty { "受信停止中：設定から受信を開始してください" }
+        stateView.text=LanRuntime.problem.ifEmpty {
+            (LanRuntime.engine?.status ?: "通信準備中") +
+                if(ReceiverState.enabled(this)) "（常駐受信ON）" else "（アプリ使用中のみ・常駐受信OFF）"
+        }
         if(Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
             stateView.append("\n通知が無効です。設定から許可してください")
-        val stamp=peers.joinToString { it.id+it.name+it.trusted+it.online(now) }+selected.toString()
+        val stamp=peers.joinToString { it.id+it.name+it.trusted+(LanRuntime.engine != null && it.online(now)) }+selected.toString()
         if(stamp!=rendered) {
             rendered=stamp;peersView.removeAllViews()
             val own=CheckBox(this).apply {
@@ -138,7 +141,7 @@ class MainActivity : Activity() {
             peers.forEach { peer ->
                 if(peer.trusted) {
                     peersView.addView(CheckBox(this).apply {
-                        val online=peer.online(now)
+                        val online=LanRuntime.engine != null && peer.online(now)
                         val label="● "+peer.name+
                             (if(online) "" else "（オフライン・保留送信）")
                         text=SpannableString(label).apply {
@@ -294,7 +297,7 @@ class MainActivity : Activity() {
         val builder=AlertDialog.Builder(this).setTitle(if(incoming) "受信箱" else "送信履歴")
             .setView(list).setNegativeButton("閉じる",null)
         if(!incoming) builder.setNeutralButton("保留を再送") { _,_ ->
-            MessengerService.engine?.wake() ?: store.retry()
+            LanRuntime.wake() ?: store.retry()
             toast("承認済みの相手へ、探索と安全な再送を試します")
         }
         val dialog=builder.create()
@@ -342,7 +345,7 @@ class MainActivity : Activity() {
         dialog.show()
     }
     private fun showLanDiagnostics() {
-        val report = MessengerService.engine?.diagnosticReport() ?: buildString {
+        val report = LanRuntime.diagnosticReport() ?: buildString {
             appendLine("受信サービス停止中")
             appendLine("VPN・UDP・TCP・ACKの実測値は、常駐受信を有効にしてから確認してください。")
             val now=System.currentTimeMillis()
@@ -369,7 +372,7 @@ class MainActivity : Activity() {
                 toast("LAN診断をコピーしました")
             }
             .setNeutralButton("再探索・再送") { _,_ ->
-                MessengerService.engine?.wake() ?: store.retry()
+                LanRuntime.wake() ?: store.retry()
                 toast("探索と保留送信を再試行します")
             }
             .setNegativeButton("閉じる",null).show()
@@ -391,6 +394,7 @@ class MainActivity : Activity() {
             }
         }
         receiverSwitch=receiverToggle;box.addView(receiverToggle)
+        box.addView(text("常駐受信OFFでも、アプリ使用中はLAN通信します。ホームや消灯で停止します。",14f))
         if(Build.VERSION.SDK_INT>=33) box.addView(button("到着通知を許可") {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS),10)
         })

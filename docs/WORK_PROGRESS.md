@@ -1,3 +1,12 @@
+# アプリ使用中LAN通信の分離（2026-11-22 JST）
+
+- 基準main: `781a0e5`。branch: `fix/foreground-lan-runtime`。実装・検証・PRまで承認済み。マージ・Release/APK配送・Drive更新は別途承認待ち。
+- `LanRuntime`で画面と常駐サービスの所有権を統合。一つのエンジンを共有し、OFF画面使用中の通信と、最終所有者離脱時の停止・保存処理完了・再起動の直列化を実装。
+- 状態遷移・試験範囲・実機手順: [FOREGROUND_LAN_LIFECYCLE_JA.md](FOREGROUND_LAN_LIFECYCLE_JA.md)。プロトコル/DB形式/Windows製品コードは変更なし。
+- 初回保存時点: 自動試験・Lint・ビルド・独立レビューは確認中。ローカルにはSDK/Gradleがなく、新規構築せず既存CIを使用。実機検収は未実施。
+
+---
+
 # M6-2 device acceptance follow-up (2026-10-24 JST)
 
 - Basic operation was confirmed on the Android 6–10 test-device range. Android-to-Android file transfer and multi-file transfer succeeded in practical use. This does not constitute acceptance of every Android version or transfer condition.

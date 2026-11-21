@@ -28,6 +28,9 @@ class LanEngine(private val context: Context, private val store: Store,
     private val pair: KeyPair, private val notifyLetter: (Letter) -> Unit,
     notifyFileOffer:(String,String)->Unit = { _,_-> }) {
     private val running = AtomicBoolean(false)
+    private val socketGate = Any()
+    private var discoveryThread: Thread? = null
+    private var receiverThread: Thread? = null
     private val cm = context.getSystemService(ConnectivityManager::class.java)
     private val prefs = context.getSharedPreferences("settings",Context.MODE_PRIVATE)
     private val clock = Executors.newSingleThreadScheduledExecutor()
@@ -52,7 +55,8 @@ class LanEngine(private val context: Context, private val store: Store,
     private val networkReconcileGate = NetworkReconcileGate()
     private val fileManager=FileTransferManager(context,store,{ scheduleTick() },notifyFileOffer)
     private val callback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: Network) {
+        override fun onAvailable(network: Network) = synchronized(networkReconcileGate) {
+            if(!running.get()) return@synchronized
             val properties = cm.getLinkProperties(network)
             val current = properties?.let(::ipv4Prefixes).orEmpty()
             val addresses = properties?.let(::ipv4Addresses).orEmpty()
@@ -63,14 +67,16 @@ class LanEngine(private val context: Context, private val store: Store,
             // and send an immediate hello; indiscriminate clearing caused online-state flicker.
             retryPeersOn(current); scheduleNetworkReconcile("利用可能"); scheduleTick()
         }
-        override fun onLost(network: Network) {
+        override fun onLost(network: Network) = synchronized(networkReconcileGate) {
+            if(!running.get()) return@synchronized
             lanPrefixes.remove(network)
             lanAddresses.remove(network)
             diagnostics.network("切断",network.toString()+" 残りIPv4 LAN="+lanPrefixes.size)
             scheduleNetworkReconcile("切断")
             scheduleTick()
         }
-        override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) {
+        override fun onLinkPropertiesChanged(network: Network, lp: android.net.LinkProperties) = synchronized(networkReconcileGate) {
+            if(!running.get()) return@synchronized
             val previous = lanPrefixes[network]
             val previousAddresses = lanAddresses[network]
             val current = ipv4Prefixes(lp)
@@ -185,16 +191,19 @@ class LanEngine(private val context: Context, private val store: Store,
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET).build(),callback)
         callbackRegistered = true
-        Thread({ listenDiscovery() },"ipmsg-discovery").start()
-        Thread({ listenMessages() },"ipmsg-receiver").start()
+        discoveryThread = Thread({ listenDiscovery() },"ipmsg-discovery").also { it.start() }
+        receiverThread = Thread({ listenMessages() },"ipmsg-receiver").also { it.start() }
         clock.scheduleWithFixedDelay({ runCatching { tick() }.onFailure { status = "通信再試行中" } },0,10,TimeUnit.SECONDS)
     }
     private fun listenDiscovery() {
         while(running.get()) {
             try {
                 DatagramSocket(null).use { socket ->
-                    socket.reuseAddress = true; socket.bind(InetSocketAddress(Protocol.PORT))
-                    socket.soTimeout = 1000; udp = socket; discoveryReady = true
+                    synchronized(socketGate) {
+                        if(!running.get()) return
+                        socket.reuseAddress = true; socket.bind(InetSocketAddress(Protocol.PORT))
+                        socket.soTimeout = 1000; udp = socket; discoveryReady = true
+                    }
                     while(running.get()) {
                         var packetHost = "?"
                         try {
@@ -250,8 +259,11 @@ class LanEngine(private val context: Context, private val store: Store,
         while(running.get()) {
             try {
                 ServerSocket().use { server ->
-                    server.reuseAddress = true; server.bind(InetSocketAddress(Protocol.PORT)); server.soTimeout = 1000
-                    tcp = server; messagesReady = true
+                    synchronized(socketGate) {
+                        if(!running.get()) return
+                        server.reuseAddress = true; server.bind(InetSocketAddress(Protocol.PORT)); server.soTimeout = 1000
+                        tcp = server; messagesReady = true
+                    }
                     while(running.get()) {
                         try {
                             val socket = server.accept()
@@ -263,14 +275,20 @@ class LanEngine(private val context: Context, private val store: Store,
                                 diagnostics.network("TCP受信拒否",host)
                                 socket.close(); continue
                             }
-                            sockets.add(socket)
-                            val timeout = deadlines.schedule({ runCatching { socket.close() } },3,TimeUnit.SECONDS)
-                            try { workers.execute {
+                            val admitted = synchronized(socketGate) {
+                                if(running.get()) { sockets.add(socket); true } else false
+                            }
+                            if(!admitted) { activeHosts.remove(host); socket.close(); continue }
+                            var timeout: java.util.concurrent.ScheduledFuture<*>? = null
+                            try {
+                                timeout = deadlines.schedule({ runCatching { socket.close() } },3,TimeUnit.SECONDS)
+                                val deadline = timeout
+                                workers.execute {
                                 try { socket.use { if(running.get()) runCatching { receive(it) } } }
-                                finally { timeout.cancel(false);sockets.remove(socket);activeHosts.remove(host) }
+                                finally { deadline.cancel(false);sockets.remove(socket);activeHosts.remove(host) }
                             } }
                             catch(_: java.util.concurrent.RejectedExecutionException) {
-                                timeout.cancel(false);sockets.remove(socket);activeHosts.remove(host);socket.close()
+                                timeout?.cancel(false);sockets.remove(socket);activeHosts.remove(host);socket.close()
                             }
 
                         } catch(_: java.net.SocketTimeoutException) { }
@@ -311,7 +329,9 @@ class LanEngine(private val context: Context, private val store: Store,
                     }
                     targets.forEach { (address,knownPeer) ->
                         runCatching {
-                            socket.send(DatagramPacket(hello,hello.size,InetAddress.getByName(address),Protocol.PORT))
+                            synchronized(socketGate) {
+                                if(running.get()) socket.send(DatagramPacket(hello,hello.size,InetAddress.getByName(address),Protocol.PORT))
+                            }
                         }.onSuccess { diagnostics.udpSent(address,knownPeer) }
                             .onFailure { diagnostics.network("UDP送信失敗",address+" "+it.javaClass.simpleName) }
                     }
@@ -342,6 +362,7 @@ class LanEngine(private val context: Context, private val store: Store,
                         }
                     }
                     store.dueTransfers(currentNow,2).forEach { transfer ->
+                        if(!running.get()) return@execute
                         val peer=store.peers().find { it.id==transfer.peer&&it.trusted } ?: return@forEach
                         val reachable=reachableNetworks(peer.host,activeNetworks)
                         if(reachable.isNotEmpty()) fileManager.process(transfer,peer) { body ->
@@ -364,10 +385,7 @@ class LanEngine(private val context: Context, private val store: Store,
             var connected = false
             var stage = "TCP接続"
             val success = runCatching {
-                val connection = network.socketFactory.createSocket()
-                sockets.add(connection)
-                val timeout = deadlines.schedule({ runCatching { connection.close() } },8,TimeUnit.SECONDS)
-                try { connection.use { socket ->
+                withConnection(network) { socket ->
                     socket.soTimeout = 5000
                     socket.connect(InetSocketAddress(peer.host,Protocol.PORT),3000)
                     connected = true
@@ -384,7 +402,7 @@ class LanEngine(private val context: Context, private val store: Store,
                     diagnostics.ackReceived(peer.id)
                     stage = "配送記録"
                     store.delivered(letter.id,peer.id)
-                } } finally { timeout.cancel(false);sockets.remove(connection) }
+                }
             }.onFailure {
                 val reason = it.javaClass.simpleName+":"+it.message.orEmpty()
                 if(connected) diagnostics.deliveryFailed(peer.id,stage,reason)
@@ -415,15 +433,13 @@ class LanEngine(private val context: Context, private val store: Store,
         nets.forEach { network ->
             if(!running.get()) throw IllegalStateException("stopped")
             try {
-                val connection=network.socketFactory.createSocket();sockets.add(connection)
-                val timeout=deadlines.schedule({ runCatching { connection.close() } },8,TimeUnit.SECONDS)
-                try { connection.use { socket ->
+                return withConnection(network) { socket ->
                     socket.soTimeout=5000;socket.connect(InetSocketAddress(peer.host,Protocol.PORT),3000)
                     require(store.peers().any { it.id==peer.id&&it.trusted })
                     Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(body,pair,Protocol.key(peer.key)))
                     val answer=Protocol.open(Protocol.read(DataInputStream(socket.getInputStream())),pair,Protocol.key(peer.key))
-                    require(store.peers().any { it.id==peer.id&&it.trusted });return answer
-                } } finally { timeout.cancel(false);sockets.remove(connection) }
+                    require(store.peers().any { it.id==peer.id&&it.trusted });answer
+                }
             } catch(error:Throwable) { failure=error }
         }
         throw failure ?: java.io.IOException("no LAN route")
@@ -454,12 +470,33 @@ class LanEngine(private val context: Context, private val store: Store,
         } == true
         return if(activeIsVpn) "あり（既定経路）" else "あり（非既定）"
     }
+    private fun <T> withConnection(network: Network,action: (Socket) -> T): T =
+        network.socketFactory.createSocket().use { socket ->
+            synchronized(socketGate) { check(running.get()); sockets.add(socket) }
+            try {
+                val timeout = deadlines.schedule({ runCatching { socket.close() } },8,TimeUnit.SECONDS)
+                try { action(socket) } finally { timeout.cancel(false) }
+            } finally { sockets.remove(socket) }
+        }
     fun close() {
-        networkReconcileGate.next();running.set(false); udp?.close(); tcp?.close()
+        synchronized(networkReconcileGate) { networkReconcileGate.next(); running.set(false) }
+        synchronized(socketGate) {
+            udp?.close(); tcp?.close()
+            sockets.forEach { runCatching { it.close() } }
+        }
         clock.shutdownNow(); sender.shutdownNow(); workers.shutdownNow(); deadlines.shutdownNow()
-        sockets.forEach { runCatching { it.close() } }; sockets.clear()
         if(callbackRegistered) runCatching { cm.unregisterNetworkCallback(callback) }
+        callbackRegistered = false
         multicast?.let { if(it.isHeld) it.release() }
+    }
+    /** Called only by the runtime worker, after close; never block the Activity's main thread. */
+    internal fun awaitStopped() {
+        discoveryThread?.join(); receiverThread?.join()
+        listOf(clock,sender,workers,deadlines).forEach { executor ->
+            while(!executor.awaitTermination(1,TimeUnit.SECONDS)) { /* drain writes before DB close */ }
+        }
+        fileManager.awaitIdle()
+        sockets.clear()
     }
 
     private data class DeliveryAttempt(val letter: Letter,val peer: Peer,

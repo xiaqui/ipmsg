@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'windows/**'
+      - 'app/src/main/java/com/xiaqui/ipmsg/LanRuntime.kt'
+      - 'app/src/main/java/com/xiaqui/ipmsg/LanEngine.kt'
       - 'app/src/test/**/WindowsInteropTest.kt'
       - 'app/src/test/resources/protocol-v1-windows-vector.json'
       - '.github/workflows/windows-*.yml'
