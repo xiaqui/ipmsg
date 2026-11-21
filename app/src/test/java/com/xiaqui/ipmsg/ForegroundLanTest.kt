@@ -96,6 +96,28 @@ class ForegroundLanTest {
             assertTrue(stops.get()>0)
         } finally { if(MessengerService.active) service.destroy() }
     }
+    @Test fun notificationPauseRefreshesAnAlreadyVisibleSettingsSwitch() {
+        ReceiverState.resume(context)
+        val service=Robolectric.buildService(MessengerService::class.java).create().startCommand(0,1)
+        val activity=Robolectric.buildActivity(MainActivity::class.java).create().start().resume().visible()
+        fun views(view: android.view.View): List<android.view.View> = listOf(view)+
+            if(view is android.view.ViewGroup) (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList()
+        try {
+            controller.awaitIdle()
+            views(activity.get().window.decorView).filterIsInstance<android.widget.Button>()
+                .first { it.text.toString()=="設定・端末承認" }.performClick()
+            val dialog=org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+            val toggle=views(dialog.window!!.decorView).filterIsInstance<android.widget.Switch>().single()
+            assertTrue(toggle.isChecked)
+            PauseReceiver().onReceive(context,Intent(MessengerNotifications.ACTION_PAUSE))
+            service.destroy()
+            Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(2,java.util.concurrent.TimeUnit.SECONDS)
+            controller.awaitIdle()
+            assertFalse(toggle.isChecked);assertFalse(ReceiverState.enabled(context))
+            assertEquals(1,starts.get());assertEquals(0,stops.get())
+            dialog.dismiss()
+        } finally { activity.pause().stop().destroy();if(MessengerService.active) service.destroy() }
+    }
     @Test fun actualEngineReleasesPortsAndInvalidatesOnlineOnFinalOwnerRelease() {
         controller.shutdown()
         val pair=KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()

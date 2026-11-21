@@ -108,9 +108,7 @@ class MainActivity : Activity() {
         super.onResume()
         foreground=true
         lanVisibility.refresh()
-        syncingReceiverSwitch=true
-        receiverSwitch?.isChecked=ReceiverState.enabled(this)
-        syncingReceiverSwitch=false
+        syncReceiverSwitch()
         if(ReceiverState.enabled(this) && !MessengerService.active) startReceiver()
         handler.post(refresh)
         historyRefreshers.forEach(handler::post)
@@ -125,7 +123,13 @@ class MainActivity : Activity() {
         catch(_: RuntimeException) { toast("受信開始に失敗しました。設定から再開してください") }
     }
     private fun toast(value: String) { Toast.makeText(this,value,Toast.LENGTH_LONG).show() }
+    private fun syncReceiverSwitch() {
+        syncingReceiverSwitch=true
+        receiverSwitch?.isChecked=ReceiverState.enabled(this)
+        syncingReceiverSwitch=false
+    }
     private fun renderPeers() {
+        syncReceiverSwitch()
         val peers=store.peers()
         selected.retainAll(peers.filter { it.trusted }.map { it.id }.toSet()+self)
         val now=System.currentTimeMillis()

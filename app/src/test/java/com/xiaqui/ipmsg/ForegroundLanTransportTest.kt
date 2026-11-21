@@ -180,7 +180,7 @@ class TestLanNetwork : ShadowNetwork() {
     @Implementation protected fun getSocketFactory(): SocketFactory = object : SocketFactory() {
         override fun createSocket(): Socket = object : Socket() {
             override fun connect(endpoint: SocketAddress,timeout: Int) =
-                super.connect(InetSocketAddress("127.0.0.1",port),timeout)
+                super.connect(InetSocketAddress("127.0.0.1",TestLanNetwork.port),timeout)
         }
         override fun createSocket(host:String,port:Int):Socket = error("unused")
         override fun createSocket(host:String,port:Int,local:InetAddress,localPort:Int):Socket = error("unused")
