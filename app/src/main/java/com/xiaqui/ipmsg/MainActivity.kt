@@ -53,6 +53,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store=Store(this)
+        // Finish first-install schema creation before the runtime opens its own connection.
+        store.writableDatabase
         // RSA identity is generated once in Android Keystore and survives process/OS restarts.
         pair=Identity.load(); self=Protocol.id(pair.public)
         savedInstanceState?.getStringArrayList("selected")?.let { selected.addAll(it) }

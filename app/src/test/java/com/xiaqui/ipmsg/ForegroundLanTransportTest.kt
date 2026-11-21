@@ -31,10 +31,10 @@ import javax.net.SocketFactory
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[23,26,28,29,34],shadows=[TestLanNetwork::class])
 class ForegroundLanTransportTest {
-    private fun eventually(assertion: () -> Boolean) {
+    private fun eventually(message: () -> String = { "" },assertion: () -> Boolean) {
         val until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10)
         while(!assertion() && System.nanoTime()<until) Thread.sleep(10)
-        assertTrue(assertion())
+        assertTrue(message(),assertion())
     }
     @Test fun offVisibleDiscoversReceivesAndRetriesTextAcrossRealLifecycle() {
         val context=RuntimeEnvironment.getApplication() as Context
@@ -65,6 +65,9 @@ class ForegroundLanTransportTest {
         val properties=LinkProperties()
         ReflectionHelpers.callInstanceMethod<Boolean>(properties,"addLinkAddress",ClassParameter.from(LinkAddress::class.java,address))
         shadow.setLinkProperties(network,properties)
+        assertTrue(Protocol.onPrefix(localAddress,localAddress,local.networkPrefixLength.toInt()))
+        assertTrue(cm.getNetworkCapabilities(network)!!.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))
+        assertEquals(localAddress,cm.getLinkProperties(network)!!.linkAddresses.single().address)
         val controller=LanSessionController {
             val store=Store(context)
             object : LanSession {
@@ -84,7 +87,7 @@ class ForegroundLanTransportTest {
             val hello=Protocol.hello("test LAN peer",remote,System.currentTimeMillis())
             DatagramSocket().use { it.send(DatagramPacket(hello,hello.size,localAddress,Protocol.PORT)) }
             Store(context).use { store ->
-                eventually { store.peers().any { it.id==remoteId } }
+                eventually({ controller.engine?.diagnosticReport() ?: controller.problem }) { store.peers().any { it.id==remoteId } }
                 assertFalse(store.peers().first { it.id==remoteId }.trusted)
                 store.trust(remoteId,true)
                 val incomingId=UUID.randomUUID().toString()
