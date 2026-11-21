@@ -51,6 +51,7 @@ class ForegroundLanTransportTest {
         val local=NetworkInterface.getNetworkInterfaces().toList().flatMap { it.interfaceAddresses }
             .first { it.address is Inet4Address && !it.address.isLoopbackAddress && !it.address.isMulticastAddress }
         val localAddress=local.address
+        TestLanNetwork.bindAddress=localAddress
         val network=ShadowNetwork.newInstance(123)
         val cm=context.getSystemService(ConnectivityManager::class.java)
         val shadow=Shadows.shadowOf(cm)
@@ -85,13 +86,13 @@ class ForegroundLanTransportTest {
             eventually { controller.engine?.diagnosticReport()?.contains("受信ポート: UDP=待受中 / TCP=待受中")==true }
             assertFalse(ReceiverState.enabled(context));assertFalse(MessengerService.active)
             val hello=Protocol.hello("test LAN peer",remote,System.currentTimeMillis())
-            DatagramSocket().use { it.send(DatagramPacket(hello,hello.size,localAddress,Protocol.PORT)) }
+            DatagramSocket(InetSocketAddress(localAddress,0)).use { it.send(DatagramPacket(hello,hello.size,localAddress,Protocol.PORT)) }
             Store(context).use { store ->
                 eventually({ controller.engine?.diagnosticReport() ?: controller.problem }) { store.peers().any { it.id==remoteId } }
                 assertFalse(store.peers().first { it.id==remoteId }.trusted)
                 store.trust(remoteId,true)
                 val incomingId=UUID.randomUUID().toString()
-                Socket(localAddress,Protocol.PORT).use { socket ->
+                Socket(localAddress,Protocol.PORT,localAddress,0).use { socket ->
                     socket.soTimeout=5000
                     Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(
                         JSONObject().put("type","TEXT").put("id",incomingId).put("body","incoming visible"),remote,pair.public))
@@ -104,7 +105,7 @@ class ForegroundLanTransportTest {
                     var failure: Exception?=null
                     repeat(5) {
                         try {
-                            return Socket(localAddress,Protocol.PORT).use { socket ->
+                            return Socket(localAddress,Protocol.PORT,localAddress,0).use { socket ->
                                 socket.soTimeout=5000
                                 Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(body,remote,pair.public))
                                 Protocol.open(Protocol.read(DataInputStream(socket.getInputStream())),remote,pair.public)
@@ -164,7 +165,14 @@ class ForegroundLanTransportTest {
 
 @Implements(Network::class)
 class TestLanNetwork : ShadowNetwork() {
-    companion object { @Volatile var port=9 }
+    companion object {
+        @Volatile var port=9
+        @Volatile var bindAddress: InetAddress?=null
+    }
+    @Implementation override fun bindSocket(socket: DatagramSocket) {
+        super.bindSocket(socket)
+        socket.bind(InetSocketAddress(bindAddress,0))
+    }
     @Implementation protected fun getSocketFactory(): SocketFactory = object : SocketFactory() {
         override fun createSocket(): Socket = object : Socket() {
             override fun connect(endpoint: SocketAddress,timeout: Int) =
