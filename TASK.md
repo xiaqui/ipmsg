@@ -1,7 +1,9 @@
 # 現在のタスク：アプリ表示中のLAN通信と常駐受信を分離する
 
-更新：2026-11-21 JST
+更新：2026-11-22 JST
 対象：Android版 IP Messenger（Android 6 / API 23以降）
+
+状態：**実装・自動検証・独立レビュー完了。[Draft PR #39](https://github.com/xiaqui/ipmsg/pull/39)で検収待ち。Android146件（失敗/skip0）・Lint・署名ビルド、Windows28件・双方向互換検査・EXEビルドは成功。実機検収・マージ・配送は未実施。** 検証済みコードheadは `25ea044c1f8a005ccf71c80bc246a610e1a7b86a`。証跡と残工程は `docs/WORK_PROGRESS.md` 冒頭を参照。以下は今回実装した要求と検収条件を保持する。
 
 ## 背景と現在地
 
