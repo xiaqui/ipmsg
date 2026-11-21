@@ -51,7 +51,6 @@ class ForegroundLanTransportTest {
         val local=NetworkInterface.getNetworkInterfaces().toList().flatMap { it.interfaceAddresses }
             .first { it.address is Inet4Address && !it.address.isLoopbackAddress && !it.address.isMulticastAddress }
         val localAddress=local.address
-        TestLanNetwork.bindAddress=localAddress
         val network=ShadowNetwork.newInstance(123)
         val cm=context.getSystemService(ConnectivityManager::class.java)
         val shadow=Shadows.shadowOf(cm)
@@ -165,14 +164,7 @@ class ForegroundLanTransportTest {
 
 @Implements(Network::class)
 class TestLanNetwork : ShadowNetwork() {
-    companion object {
-        @Volatile var port=9
-        @Volatile var bindAddress: InetAddress?=null
-    }
-    @Implementation override fun bindSocket(socket: DatagramSocket) {
-        super.bindSocket(socket)
-        socket.bind(InetSocketAddress(bindAddress,0))
-    }
+    companion object { @Volatile var port=9 }
     @Implementation protected fun getSocketFactory(): SocketFactory = object : SocketFactory() {
         override fun createSocket(): Socket = object : Socket() {
             override fun connect(endpoint: SocketAddress,timeout: Int) =
