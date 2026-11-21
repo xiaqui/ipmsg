@@ -15,6 +15,8 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowNetwork
 import org.robolectric.shadows.ShadowNetworkInfo
+import org.robolectric.util.ReflectionHelpers
+import org.robolectric.util.ReflectionHelpers.ClassParameter
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.*
@@ -48,8 +50,16 @@ class ForegroundLanTransportTest {
         val cm=context.getSystemService(ConnectivityManager::class.java)
         val shadow=Shadows.shadowOf(cm)
         shadow.addNetwork(network,ShadowNetworkInfo.newInstance(NetworkInfo.DetailedState.CONNECTED,ConnectivityManager.TYPE_WIFI,0,true,NetworkInfo.State.CONNECTED))
-        shadow.setNetworkCapabilities(network,NetworkCapabilities().addTransportType(NetworkCapabilities.TRANSPORT_WIFI))
-        shadow.setLinkProperties(network,LinkProperties().apply { addLinkAddress(LinkAddress(InetAddress.getByName("127.0.0.1"),8)) })
+        val capabilities=NetworkCapabilities()
+        ReflectionHelpers.callInstanceMethod<NetworkCapabilities>(capabilities,"addTransportType",
+            ClassParameter.from(Int::class.javaPrimitiveType!!,NetworkCapabilities.TRANSPORT_WIFI))
+        shadow.setNetworkCapabilities(network,capabilities)
+        val address=ReflectionHelpers.callConstructor(LinkAddress::class.java,
+            ClassParameter.from(InetAddress::class.java,InetAddress.getByName("127.0.0.1")),
+            ClassParameter.from(Int::class.javaPrimitiveType!!,8))
+        val properties=LinkProperties()
+        ReflectionHelpers.callInstanceMethod<Boolean>(properties,"addLinkAddress",ClassParameter.from(LinkAddress::class.java,address))
+        shadow.setLinkProperties(network,properties)
         val controller=LanSessionController {
             val store=Store(context)
             object : LanSession {
@@ -81,6 +91,33 @@ class ForegroundLanTransportTest {
                     assertEquals("ACK",ack.getString("type"));assertEquals(incomingId,ack.getString("id"))
                 }
                 assertEquals("incoming visible",store.letters(true).single().body)
+                // The same real engine receives part of a file before the visible owner leaves.
+                fun request(body: JSONObject): JSONObject {
+                    var failure: Exception?=null
+                    repeat(5) {
+                        try {
+                            return Socket("127.0.0.1",Protocol.PORT).use { socket ->
+                                socket.soTimeout=5000
+                                Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(body,remote,pair.public))
+                                Protocol.open(Protocol.read(DataInputStream(socket.getInputStream())),remote,pair.public)
+                            }
+                        } catch(error: java.io.IOException) {
+                            failure=error;Thread.sleep(10) // Same idempotent file request after admission races.
+                        }
+                    }
+                    throw failure!!
+                }
+                val transferId=UUID.randomUUID().toString();val fileId=UUID.randomUUID().toString()
+                val prefix="received before hiding".toByteArray();val bytes=prefix+" pending tail".toByteArray()
+                val offer=JSONObject().put("type","FILE_OFFER").put("transferId",transferId).put("files",
+                    org.json.JSONArray().put(JSONObject().put("fileId",fileId).put("name","partial.txt")
+                        .put("mime","text/plain").put("size",bytes.size).put("sha256",FileContract.sha(bytes))))
+                assertEquals("TIMEOUT",request(offer).getString("code"))
+                val temp=java.io.File(context.filesDir,"$transferId.part").apply { writeBytes(ByteArray(0)) }
+                store.acceptTransfer(transferId,remoteId,"content://test/tree/root",mapOf(fileId to temp.absolutePath))
+                val chunk=JSONObject().put("type","FILE_CHUNK").put("transferId",transferId).put("fileId",fileId)
+                    .put("seq",0).put("offset",0).put("data",Protocol.encode(prefix)).put("sha256",FileContract.sha(prefix))
+                assertEquals(prefix.size.toLong(),request(chunk).getLong("nextOffset"))
                 activity.pause().stop();controller.awaitIdle()
                 assertNull(controller.engine);assertFalse(ReceiverState.enabled(context))
                 val pendingId=store.enqueue(listOf(remoteId),Protocol.id(pair.public),"self","queued while hidden")
@@ -102,6 +139,11 @@ class ForegroundLanTransportTest {
                     assertEquals("queued while hidden",received.get(15,TimeUnit.SECONDS))
                     eventually { store.letters(false).single().state=="DELIVERED" }
                     assertEquals(pendingId,store.letters(false).single().id)
+                    val resumed=request(JSONObject().put("type","FILE_RESUME").put("transferId",transferId)
+                        .put("fileId",fileId).put("offset",0).put("prefixSha256",FileContract.EMPTY_SHA))
+                    assertEquals(prefix.size.toLong(),resumed.getLong("nextOffset"))
+                    assertEquals(FileContract.sha(prefix),resumed.getString("prefixSha256"))
+                    assertArrayEquals(prefix,temp.readBytes())
                 }
             }
         } finally {
@@ -113,9 +155,8 @@ class ForegroundLanTransportTest {
 }
 
 @Implements(Network::class)
-class LoopbackNetwork {
+class LoopbackNetwork : ShadowNetwork() {
     companion object { @Volatile var port=9 }
-    @Implementation protected fun bindSocket(socket: DatagramSocket) { }
     @Implementation protected fun getSocketFactory(): SocketFactory = object : SocketFactory() {
         override fun createSocket(): Socket = object : Socket() {
             override fun connect(endpoint: SocketAddress,timeout: Int) =
