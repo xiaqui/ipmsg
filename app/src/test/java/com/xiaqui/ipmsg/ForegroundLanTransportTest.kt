@@ -48,9 +48,19 @@ class ForegroundLanTransportTest {
         val pair=Identity.load()
         // Production deliberately rejects loopback peers. Use the runner's own non-loopback
         // IPv4 for inbound LAN traffic, without weakening that protocol policy.
-        val local=NetworkInterface.getNetworkInterfaces().toList().flatMap { it.interfaceAddresses }
-            .first { it.address is Inet4Address && !it.address.isLoopbackAddress && !it.address.isMulticastAddress }
+        val interfaces=NetworkInterface.getNetworkInterfaces().toList().flatMap { it.interfaceAddresses }
+            .filter { it.address is Inet4Address && !it.address.isLoopbackAddress && !it.address.isMulticastAddress }
+        // UDP connect chooses a route without sending a packet; avoid Docker bridge addresses.
+        val routed=DatagramSocket().use { socket ->
+            socket.connect(InetAddress.getByName("192.0.2.1"),9);socket.localAddress
+        }
+        val local=interfaces.first { it.address==routed }
         val localAddress=local.address
+        fun peerSocket(): Socket = Socket().apply {
+            bind(InetSocketAddress(localAddress,0))
+            try { connect(InetSocketAddress(localAddress,Protocol.PORT),3000) }
+            catch(error: Exception) { close();throw error }
+        }
         val network=ShadowNetwork.newInstance(123)
         val cm=context.getSystemService(ConnectivityManager::class.java)
         val shadow=Shadows.shadowOf(cm)
@@ -59,15 +69,17 @@ class ForegroundLanTransportTest {
         ReflectionHelpers.callInstanceMethod<NetworkCapabilities>(capabilities,"addTransportType",
             ClassParameter.from(Int::class.javaPrimitiveType!!,NetworkCapabilities.TRANSPORT_WIFI))
         shadow.setNetworkCapabilities(network,capabilities)
-        val address=ReflectionHelpers.callConstructor(LinkAddress::class.java,
-            ClassParameter.from(InetAddress::class.java,localAddress),
-            ClassParameter.from(Int::class.javaPrimitiveType!!,local.networkPrefixLength.toInt()))
         val properties=LinkProperties()
-        ReflectionHelpers.callInstanceMethod<Boolean>(properties,"addLinkAddress",ClassParameter.from(LinkAddress::class.java,address))
+        interfaces.forEach { link ->
+            val address=ReflectionHelpers.callConstructor(LinkAddress::class.java,
+                ClassParameter.from(InetAddress::class.java,link.address),
+                ClassParameter.from(Int::class.javaPrimitiveType!!,link.networkPrefixLength.toInt()))
+            ReflectionHelpers.callInstanceMethod<Boolean>(properties,"addLinkAddress",ClassParameter.from(LinkAddress::class.java,address))
+        }
         shadow.setLinkProperties(network,properties)
         assertTrue(Protocol.onPrefix(localAddress,localAddress,local.networkPrefixLength.toInt()))
         assertTrue(cm.getNetworkCapabilities(network)!!.hasTransport(NetworkCapabilities.TRANSPORT_WIFI))
-        assertEquals(localAddress,cm.getLinkProperties(network)!!.linkAddresses.single().address)
+        assertTrue(cm.getLinkProperties(network)!!.linkAddresses.any { it.address==localAddress })
         val controller=LanSessionController {
             val store=Store(context)
             object : LanSession {
@@ -91,7 +103,7 @@ class ForegroundLanTransportTest {
                 assertFalse(store.peers().first { it.id==remoteId }.trusted)
                 store.trust(remoteId,true)
                 val incomingId=UUID.randomUUID().toString()
-                Socket(localAddress,Protocol.PORT,localAddress,0).use { socket ->
+                peerSocket().use { socket ->
                     socket.soTimeout=5000
                     Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(
                         JSONObject().put("type","TEXT").put("id",incomingId).put("body","incoming visible"),remote,pair.public))
@@ -104,7 +116,7 @@ class ForegroundLanTransportTest {
                     var failure: Exception?=null
                     repeat(5) {
                         try {
-                            return Socket(localAddress,Protocol.PORT,localAddress,0).use { socket ->
+                            return peerSocket().use { socket ->
                                 socket.soTimeout=5000
                                 Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(body,remote,pair.public))
                                 Protocol.open(Protocol.read(DataInputStream(socket.getInputStream())),remote,pair.public)
