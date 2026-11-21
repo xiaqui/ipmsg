@@ -27,9 +27,9 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import javax.net.SocketFactory
 
-/** Real UDP/TCP frames, with the Android Network's routing calls mapped to JVM loopback. */
+/** Real UDP/TCP frames on the runner, with only Android Network routing adapted for the JVM. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk=[23,26,28,29,34],shadows=[LoopbackNetwork::class])
+@Config(sdk=[23,26,28,29,34],shadows=[TestLanNetwork::class])
 class ForegroundLanTransportTest {
     private fun eventually(assertion: () -> Boolean) {
         val until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10)
@@ -46,6 +46,11 @@ class ForegroundLanTransportTest {
         val remote=KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
         val remoteId=Protocol.id(remote.public)
         val pair=Identity.load()
+        // Production deliberately rejects loopback peers. Use the runner's own non-loopback
+        // IPv4 for inbound LAN traffic, without weakening that protocol policy.
+        val local=NetworkInterface.getNetworkInterfaces().toList().flatMap { it.interfaceAddresses }
+            .first { it.address is Inet4Address && !it.address.isLoopbackAddress && !it.address.isMulticastAddress }
+        val localAddress=local.address
         val network=ShadowNetwork.newInstance(123)
         val cm=context.getSystemService(ConnectivityManager::class.java)
         val shadow=Shadows.shadowOf(cm)
@@ -55,8 +60,8 @@ class ForegroundLanTransportTest {
             ClassParameter.from(Int::class.javaPrimitiveType!!,NetworkCapabilities.TRANSPORT_WIFI))
         shadow.setNetworkCapabilities(network,capabilities)
         val address=ReflectionHelpers.callConstructor(LinkAddress::class.java,
-            ClassParameter.from(InetAddress::class.java,InetAddress.getByName("127.0.0.1")),
-            ClassParameter.from(Int::class.javaPrimitiveType!!,8))
+            ClassParameter.from(InetAddress::class.java,localAddress),
+            ClassParameter.from(Int::class.javaPrimitiveType!!,local.networkPrefixLength.toInt()))
         val properties=LinkProperties()
         ReflectionHelpers.callInstanceMethod<Boolean>(properties,"addLinkAddress",ClassParameter.from(LinkAddress::class.java,address))
         shadow.setLinkProperties(network,properties)
@@ -76,14 +81,14 @@ class ForegroundLanTransportTest {
             activity.create().start().resume().visible();controller.awaitIdle()
             eventually { controller.engine?.diagnosticReport()?.contains("受信ポート: UDP=待受中 / TCP=待受中")==true }
             assertFalse(ReceiverState.enabled(context));assertFalse(MessengerService.active)
-            val hello=Protocol.hello("loopback peer",remote,System.currentTimeMillis())
-            DatagramSocket().use { it.send(DatagramPacket(hello,hello.size,InetAddress.getLoopbackAddress(),Protocol.PORT)) }
+            val hello=Protocol.hello("test LAN peer",remote,System.currentTimeMillis())
+            DatagramSocket().use { it.send(DatagramPacket(hello,hello.size,localAddress,Protocol.PORT)) }
             Store(context).use { store ->
                 eventually { store.peers().any { it.id==remoteId } }
                 assertFalse(store.peers().first { it.id==remoteId }.trusted)
                 store.trust(remoteId,true)
                 val incomingId=UUID.randomUUID().toString()
-                Socket("127.0.0.1",Protocol.PORT).use { socket ->
+                Socket(localAddress,Protocol.PORT).use { socket ->
                     socket.soTimeout=5000
                     Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(
                         JSONObject().put("type","TEXT").put("id",incomingId).put("body","incoming visible"),remote,pair.public))
@@ -96,7 +101,7 @@ class ForegroundLanTransportTest {
                     var failure: Exception?=null
                     repeat(5) {
                         try {
-                            return Socket("127.0.0.1",Protocol.PORT).use { socket ->
+                            return Socket(localAddress,Protocol.PORT).use { socket ->
                                 socket.soTimeout=5000
                                 Protocol.write(DataOutputStream(socket.getOutputStream()),Protocol.seal(body,remote,pair.public))
                                 Protocol.open(Protocol.read(DataInputStream(socket.getInputStream())),remote,pair.public)
@@ -125,7 +130,7 @@ class ForegroundLanTransportTest {
                 // A distinct ephemeral port stands in for the peer's own 42124 on another device.
                 ServerSocket(0).use { server ->
                     server.soTimeout=10000
-                    LoopbackNetwork.port=server.localPort
+                    TestLanNetwork.port=server.localPort
                     val received=worker.submit<String> {
                         server.accept().use { socket ->
                             socket.soTimeout=5000
@@ -149,13 +154,13 @@ class ForegroundLanTransportTest {
         } finally {
             activity.pause().stop().destroy();controller.shutdown();worker.shutdownNow()
             LanRuntime::class.java.getDeclaredField("controller").apply { isAccessible=true }.set(LanRuntime,null)
-            Security.removeProvider("IpmsgTestIdentity");LoopbackNetwork.port=9
+            Security.removeProvider("IpmsgTestIdentity");TestLanNetwork.port=9
         }
     }
 }
 
 @Implements(Network::class)
-class LoopbackNetwork : ShadowNetwork() {
+class TestLanNetwork : ShadowNetwork() {
     companion object { @Volatile var port=9 }
     @Implementation protected fun getSocketFactory(): SocketFactory = object : SocketFactory() {
         override fun createSocket(): Socket = object : Socket() {

@@ -25,7 +25,7 @@
 
 ## 自動試験と実機の境界
 
-`LanSessionControllerTest`は所有権の共有、停止待ちと再生成の競合、ON/OFF連打、初期化中の画面離脱、初期化失敗後の再試行を検査する。`ForegroundLanTest`はAPI23/26/28/29/34でサービス・通知一時停止・boot、実エンジン停止とポート再利用、保留本文と部分受信ファイルの再開を検査する。`ForegroundLanTransportTest`は実Activityライフサイクルとloopback上の署名HELLO/暗号化TEXT/認証ACK/保留再送を通す（Android NetworkのルーティングだけをJVM用に置換）。既存の本文/暗号/ACK/重複排除/ファイル転送・Android/Windowsベクトル試験も維持する。
+`LanSessionControllerTest`は所有権の共有、停止待ちと再生成の競合、ON/OFF連打、初期化中の画面離脱、初期化失敗後の再試行を検査する。`ForegroundLanTest`はAPI23/26/28/29/34でサービス・通知一時停止・boot、実エンジン停止とポート再利用、保留本文と部分受信ファイルの再開を検査する。`ForegroundLanTransportTest`は実Activityライフサイクルと同一runner内の署名HELLO/暗号化TEXT/認証ACK/保留再送/部分受信後のFILE_RESUMEを通す（Android NetworkのルーティングだけをJVM用に置換。製品がloopback端末を拒否する仕様に合わせ、受信はrunner自身の非loopback IPv4を使用）。既存の本文/暗号/ACK/重複排除/ファイル転送・Android/Windowsベクトル試験も維持する。
 
 実機ではAndroid6/7/8/9/10の必要な組み合わせで、OFF表示中の双方向本文・ファイル・別端末からの探索、ホーム/消灯後の不受信、復帰時の再探索・再送、通知一時停止、ONでの背景受信、Wi-Fi復帰、転送中の外部ピッカー遷移を確認する。自動試験は無線・OEM省電力・実機相互運用の合格を意味しない。
 
