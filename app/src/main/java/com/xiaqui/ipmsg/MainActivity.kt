@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val historyRefreshers = linkedSetOf<Runnable>()
     private var foreground = false
+    private val lanVisibility by lazy { VisibleLanOwner(this) }
     private var receiverSwitch: Switch? = null
     private var syncingReceiverSwitch = false
     private val prefs by lazy { getSharedPreferences("settings",MODE_PRIVATE) }
@@ -99,10 +100,12 @@ class MainActivity : Activity() {
         outState.putStringArrayList("selected",ArrayList(selected))
         super.onSaveInstanceState(outState)
     }
+    override fun onStart() { super.onStart();lanVisibility.start() }
+    override fun onStop() { lanVisibility.stop();super.onStop() }
     override fun onResume() {
         super.onResume()
         foreground=true
-        LanRuntime.foreground(this,this,true)
+        lanVisibility.refresh()
         syncingReceiverSwitch=true
         receiverSwitch?.isChecked=ReceiverState.enabled(this)
         syncingReceiverSwitch=false
@@ -111,11 +114,10 @@ class MainActivity : Activity() {
         historyRefreshers.forEach(handler::post)
     }
     override fun onPause() {
-        LanRuntime.foreground(this,this,false)
         foreground=false;handler.removeCallbacks(refresh);historyRefreshers.forEach(handler::removeCallbacks)
         super.onPause()
     }
-    override fun onDestroy() { LanRuntime.foreground(this,this,false);store.close();super.onDestroy() }
+    override fun onDestroy() { lanVisibility.stop();store.close();super.onDestroy() }
     private fun startReceiver() {
         try { MessengerService.start(this) }
         catch(_: RuntimeException) { toast("受信開始に失敗しました。設定から再開してください") }
@@ -346,8 +348,8 @@ class MainActivity : Activity() {
     }
     private fun showLanDiagnostics() {
         val report = LanRuntime.diagnosticReport() ?: buildString {
-            appendLine("受信サービス停止中")
-            appendLine("VPN・UDP・TCP・ACKの実測値は、常駐受信を有効にしてから確認してください。")
+            appendLine("LAN通信の準備中／停止中")
+            appendLine("アプリ表示中は常駐受信OFFでも通信します。開始できない場合は画面を開き直してください。")
             val now=System.currentTimeMillis()
             appendLine("保存済み端末:")
             store.peers().forEach {
@@ -356,7 +358,7 @@ class MainActivity : Activity() {
                     DateFormat.SHORT,DateFormat.MEDIUM).format(Date(it.seen))
                 appendLine("  "+LanDiagnostics.safePeerName(it.name)+" "+it.id.take(8)+" "+it.host+
                     " 最終発見:"+stamp+"（"+age+"）"+
-                    " "+if(it.online(now)) "ONLINE" else "OFFLINE")
+                    " OFFLINE（通信未稼働）")
             }
         }
         val reportView=TextView(this).apply {

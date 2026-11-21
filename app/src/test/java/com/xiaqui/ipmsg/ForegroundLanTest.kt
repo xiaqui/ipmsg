@@ -29,7 +29,10 @@ class ForegroundLanTest {
     private val starts=AtomicInteger()
     private val stops=AtomicInteger()
     @Before fun setup() {
+        java.security.Security.insertProviderAt(TestIdentityProvider(),1)
         context=RuntimeEnvironment.getApplication()
+        Shadows.shadowOf(context.getSystemService(android.os.PowerManager::class.java)).setIsInteractive(true)
+        Shadows.shadowOf(context.getSystemService(android.app.KeyguardManager::class.java)).setKeyguardLocked(false)
         context.getSharedPreferences("settings",Context.MODE_PRIVATE).edit().clear().commit()
         context.deleteDatabase("ipmsg.db")
         controller=LanSessionController { object : LanSession {
@@ -41,6 +44,7 @@ class ForegroundLanTest {
         MessengerService.active=false
     }
     @After fun cleanup() {
+        java.security.Security.removeProvider("IpmsgTestIdentity")
         controller.shutdown()
         LanRuntime::class.java.getDeclaredField("controller").apply { isAccessible=true }.set(LanRuntime,null)
         MessengerService.active=false
@@ -58,6 +62,23 @@ class ForegroundLanTest {
         assertNull(Shadows.shadowOf(context as android.app.Application).nextStartedService)
         LanRuntime.foreground(context,activity,true);controller.awaitIdle()
         assertEquals(2,starts.get());assertTrue(ReceiverState.paused(context))
+    }
+    @Test fun actualActivityKeepsPausedVisiblePaneButStopsOnHomeAndScreenOff() {
+        val activity=Robolectric.buildActivity(MainActivity::class.java).create().start().resume().visible()
+        try {
+            controller.awaitIdle();assertEquals(1,starts.get());assertFalse(ReceiverState.enabled(context))
+            activity.pause();controller.awaitIdle()
+            assertEquals(0,stops.get()) // Paused split-screen pane is still displayed.
+            activity.stop();controller.awaitIdle();assertTrue(stops.get()>0)
+            activity.start().resume();controller.awaitIdle();assertEquals(2,starts.get())
+            val before=stops.get()
+            context.sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
+            Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            controller.awaitIdle();assertTrue(stops.get()>before)
+            context.sendBroadcast(Intent(Intent.ACTION_SCREEN_ON))
+            Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            controller.awaitIdle();assertEquals(3,starts.get())
+        } finally { activity.pause().stop().destroy() }
     }
     @Test fun serviceAndNotificationPausePreserveVisibleSession() {
         val activity=Any();LanRuntime.foreground(context,activity,true);controller.awaitIdle()
@@ -91,6 +112,10 @@ class ForegroundLanTest {
         try {
             val owner=Any();controller.foreground(owner,true);controller.awaitIdle()
             assertNotNull(controller.engine)
+            val deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(5)
+            while(controller.engine!!.diagnosticReport().let { !it.contains("受信ポート: UDP=待受中 / TCP=待受中") } && System.nanoTime()<deadline) Thread.yield()
+            val report=controller.engine!!.diagnosticReport()
+            assertTrue(report,report.contains("受信ポート: UDP=待受中 / TCP=待受中"))
             controller.foreground(owner,false);controller.awaitIdle()
             assertNull(controller.engine);assertEquals(0L,store.peers().first { it.id==id }.seen)
             ServerSocket(Protocol.PORT).use { assertTrue(it.isBound) }
