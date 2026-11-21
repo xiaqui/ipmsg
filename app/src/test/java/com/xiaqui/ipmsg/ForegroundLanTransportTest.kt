@@ -47,9 +47,9 @@ class ForegroundLanTransportTest {
         val network=ShadowNetwork.newInstance(123)
         val cm=context.getSystemService(ConnectivityManager::class.java)
         val shadow=Shadows.shadowOf(cm)
-        shadow.addNetwork(network,ShadowNetworkInfo.newInstance(0,ConnectivityManager.TYPE_WIFI,0,true,NetworkInfo.State.CONNECTED))
+        shadow.addNetwork(network,ShadowNetworkInfo.newInstance(NetworkInfo.DetailedState.CONNECTED,ConnectivityManager.TYPE_WIFI,0,true,NetworkInfo.State.CONNECTED))
         shadow.setNetworkCapabilities(network,NetworkCapabilities().addTransportType(NetworkCapabilities.TRANSPORT_WIFI))
-        shadow.setLinkProperties(network,LinkProperties().apply { addLinkAddress(LinkAddress("127.0.0.1/8")) })
+        shadow.setLinkProperties(network,LinkProperties().apply { addLinkAddress(LinkAddress(InetAddress.getByName("127.0.0.1"),8)) })
         val controller=LanSessionController {
             val store=Store(context)
             object : LanSession {

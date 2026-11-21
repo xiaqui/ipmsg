@@ -5,13 +5,14 @@ import java.util.concurrent.Executors
 
 /** Process-wide ownership: an Activity and the foreground service never bind separate ports. */
 internal object LanRuntime {
-    private var controller: LanSessionController? = null
+    @Volatile private var controller: LanSessionController? = null
     @Synchronized private fun controller(context: Context): LanSessionController =
         controller ?: run {
             val app = context.applicationContext
             LanSessionController {
                 val store = Store(app)
                 val engine = try {
+                    store.offline()
                     LanEngine(app,store,Identity.load(),
                         { MessengerNotifications.notifyLetter(app) },
                         { name,_ -> MessengerNotifications.notifyFileOffer(app,name) })
