@@ -1,6 +1,6 @@
 name: Release Signed Android APK
 # Main-only signed test prerelease; preserve signature, provenance, and re-download verification gates.
-# One-time release refresh after repository signing secret rotation; application sources remain unchanged.
+# One intentional prerelease per version; never overwrite historical APK assets.
 
 on:
   workflow_dispatch:
@@ -66,10 +66,21 @@ jobs:
           "$BUILD_TOOLS/aapt" dump badging "$APK" > badging.txt
           grep -q "package: name='com.xiaqui.ipmsg'" badging.txt
           grep -q "sdkVersion:'23'" badging.txt
-          cp "$APK" ipmsg-debug.apk
-          sha256sum ipmsg-debug.apk > SHA256SUMS
+          # Extract the real package version from the signed APK.
+          VERSION_CODE=$(sed -n "s/^package: .*versionCode='\\([^']*\\)'.*/\\1/p" badging.txt | head -1)
+          VERSION_NAME=$(sed -n "s/^package: .*versionName='\\([^']*\\)'.*/\\1/p" badging.txt | head -1)
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] && test "$VERSION_CODE" -gt 0
+          [[ "$VERSION_NAME" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]
+          APK_NAME="IPMessenger-v${VERSION_NAME}-preview.apk"
+          cp "$APK" "$APK_NAME"
+          sha256sum "$APK_NAME" > SHA256SUMS
+          {
+            echo "APK_NAME=$APK_NAME"
+            echo "VERSION_NAME=$VERSION_NAME"
+            echo "VERSION_CODE=$VERSION_CODE"
+          } >> "$GITHUB_ENV"
           printf 'source_sha=%s\nrun_id=%s\n' "$SOURCE_SHA" "$GITHUB_RUN_ID" > provenance.txt
-          printf 'apk_size=%s\n' "$(stat -c %s ipmsg-debug.apk)" >> provenance.txt
+          printf 'apk_size=%s\n' "$(stat -c %s "$APK_NAME")" >> provenance.txt
           python3 - <<'PY'
           import pathlib, xml.etree.ElementTree as ET
           results = [ET.parse(p).getroot() for p in pathlib.Path("app/build/test-results/testDebugUnitTest").glob("TEST-*.xml")]
@@ -88,11 +99,15 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          SHORT_SHA="${SOURCE_SHA:0:12}"
-          TAG="ipmsg-test-${SHORT_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          TITLE="IP Messenger test ${SHORT_SHA} (run ${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT})"
-          printf 'Automated test prerelease. Not delivered to Google Drive.\n\nsource_sha=%s\nrun_id=%s\nrun_attempt=%s\n' \
-            "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > release-notes.txt
+          test -n "$APK_NAME" && test -n "$VERSION_NAME" && test -n "$VERSION_CODE"
+          TAG="ipmsg-v${VERSION_NAME}-preview"
+          TITLE="IP Messenger v${VERSION_NAME} preview (code ${VERSION_CODE})"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists. Bump versionName and versionCode before publishing another APK."
+            exit 1
+          fi
+          printf 'Signed Android preview. Not delivered to Google Drive.\n\nversion_name=%s\nversion_code=%s\nsource_sha=%s\nrun_id=%s\nrun_attempt=%s\n' \
+            "$VERSION_NAME" "$VERSION_CODE" "$SOURCE_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > release-notes.txt
           # Keep the assets private as a draft until every downloaded-byte check passes.
           gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
@@ -101,7 +116,7 @@ jobs:
             --notes-file release-notes.txt \
             --draft \
             --prerelease \
-            ipmsg-debug.apk SHA256SUMS provenance.txt signing.txt badging.txt
+            "$APK_NAME" SHA256SUMS provenance.txt signing.txt badging.txt
 
           # Drafts can be briefly absent from the release listing immediately after creation.
           RELEASE_ID=""
@@ -115,24 +130,24 @@ jobs:
           done
           test -n "$RELEASE_ID"
           ASSET_ID=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate \
-            --jq '.[] | select(.name == "ipmsg-debug.apk") | .id' | head -1)
+            --jq '.[] | select(.name == "$APK_NAME") | .id' | head -1)
           ASSET_SIZE=$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate \
-            --jq '.[] | select(.name == "ipmsg-debug.apk") | .size' | head -1)
+            --jq '.[] | select(.name == "$APK_NAME") | .size' | head -1)
           test -n "$ASSET_ID"
 
           mkdir release-verify
           gh api -H "Accept: application/octet-stream" \
-            "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID" > release-verify/ipmsg-debug.apk
+            "repos/$GITHUB_REPOSITORY/releases/assets/$ASSET_ID" > "release-verify/$APK_NAME"
           EXPECTED_SHA=$(cut -d' ' -f1 SHA256SUMS)
-          DOWNLOADED_SHA=$(sha256sum release-verify/ipmsg-debug.apk | cut -d' ' -f1)
-          LOCAL_SIZE=$(stat -c %s ipmsg-debug.apk)
-          DOWNLOADED_SIZE=$(stat -c %s release-verify/ipmsg-debug.apk)
+          DOWNLOADED_SHA=$(sha256sum "release-verify/$APK_NAME" | cut -d' ' -f1)
+          LOCAL_SIZE=$(stat -c %s "$APK_NAME")
+          DOWNLOADED_SIZE=$(stat -c %s "release-verify/$APK_NAME")
           test "$DOWNLOADED_SHA" = "$EXPECTED_SHA"
           test "$DOWNLOADED_SIZE" = "$LOCAL_SIZE"
           test "$ASSET_SIZE" = "$LOCAL_SIZE"
 
           BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs --min-sdk-version 23 release-verify/ipmsg-debug.apk > release-signing.txt
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs --min-sdk-version 23 "release-verify/$APK_NAME" > release-signing.txt
           EXPECTED_CERT=$(keytool -exportcert -keystore "$ANDROID_KEYSTORE_FILE" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" | sha256sum | cut -d' ' -f1)
           grep -qi "certificate SHA-256 digest: $EXPECTED_CERT" release-signing.txt
 
