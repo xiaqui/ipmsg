@@ -27,6 +27,13 @@ These instructions apply to `xiaqui/ipmsg`. The first active section of `TASK.md
 
 Run relevant Android/Windows tests, lint/build checks, protocol compatibility tests, and `git diff --check`. Follow this repository's current Release-based distribution workflow. Trace source SHA to run/release/asset, downloaded file, hash/signature, and device test. Do not use another product's fixed destination or confuse an artifact with a release asset.
 
+## 検収用Releaseの工程順（2026-11-22確定）
+
+- Android実機検収には、端末にインストールできる署名APKが必要。現在のipmsgでは署名Releaseを完成mainから配布するため、**自動テスト・レビュー → 承認済みPRマージ → mainから署名Release → 実機検収**の順とする。
+- **実機合格を、検収用APKのマージやRelease公開の必須前提にしない。** 逆に、CI成功を実機合格やRelease配送完了と混同しない。製品の正式完了判定は実機検収後。
+- マージ・配送はそのタスクで承認された範囲内のみ実行。承認済みなら実機未検収を理由にDraftへ戻して工程を循環させない。P0/P1未解決・CI失敗・署名不一致があればマージ/配送を止めて対処する。
+- Releaseの成否はActions run、公開Asset、source SHA、hash、署名の実体で判断し、mainへ特定の公開トリガー付きpushをしただけで成功と記録しない。文書更新のみでReleaseを再実行しない。
+
 ## Progress
 
 Update `docs/WORK_PROGRESS.md` with verified SHA/PR, tests, review, CI/release status, device checks, and remaining work. Historical handoffs are evidence, not current instructions.
