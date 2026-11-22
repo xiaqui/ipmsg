@@ -4,7 +4,8 @@
 - 署名Release workflowは `aapt dump badging` で完成APK実体の版を読み、`IPMessenger-v0.5.1-preview.apk` 型のファイル名、`ipmsg-v0.5.1-preview` 型のtag、版付きReleaseタイトルを生成する。SHA-256/署名の再ダウンロード検証と固定署名鍵運用を維持する。同じタグが既にあれば無条件の再公開を拒否する。
 - 成果物の確認項目はsource SHA、versionName/versionCode、APK SHA-256/証明書、Actions run、Release Assetであり、**PRのコード/CI成功のみを実配布や実機合格と扱わない**。マージ後に一度だけ公開対象を決めてReleaseし、出荷の実体を確認する。
 - 公開済みの0.5.0のAPKと0.5.1のAPKは**別実体**。Google Drive固定ファイルは今回の変更対象外。Android6(API23)対応は据え置き。
-- GitHubでPRを作成・自動検証し、問題がなければマージ時に明示的な公開トリガーを設定する。Releaseの実在・ハッシュ・実機インストールは別途確認が必要。
+- **統合**：PR #40の最終head `d47b044e433e890cfa00a6de9cc635f30abb7a12` に対するAndroid Actions run `44972862914` のjob成功（製品テスト・lint・署名検査）。2026-11-22に `[release-test]` 付きsquash merge完了。完成main SHA `61cf9ce73ee36680ea953c7efd52875769d8645d`。Release workflowの起動条件は成立。**公開完了、Release Assetとそのハッシュ・署名は未確認**。PR CIの成功だけで配送済みにはしない。
+
 
 ---
 
