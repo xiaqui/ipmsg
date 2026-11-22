@@ -1,6 +1,6 @@
 # アプリ使用中LAN通信の分離（2026-11-22 JST）
 
-状態：**実装・自動検証・独立レビュー完了。[Draft PR #39](https://github.com/xiaqui/ipmsg/pull/39)で検収待ち。実機検収・マージ・Release/APK配送・Drive更新は未実施。**
+状態：**PR #39の実装・自動検証・レビュー完了、2026-11-22にmainへマージ済み。実機検収は未実施。mainからの署名Release公開・APK実体の確認は未完了（配送成功とは扱わない）。Drive未更新。**
 
 - 基準main: `781a0e5288bd02d37aa884d5c8c06a5f85a4a38d`。branch: `fix/foreground-lan-runtime`。コード検証済みhead: `25ea044c1f8a005ccf71c80bc246a610e1a7b86a`。本記録とTASKの結果追記はその後の文書変更だけで、製品・テストコードは同一。
 - `LanRuntime`で表示中のActivityと常駐サービスの所有権を統合し、一つのエンジンを共有。OFFでも表示中は通信し、非表示・消灯・ロック時はソケットを閉じ、ワーカーとSAF最終保存の終了後にDBを解放する。再表示時は旧セッションの終了後に再bindする。
@@ -15,7 +15,7 @@
 - 独立レビューのP2（未稼働時診断のONLINE表示、paused分割画面の扱い、実通信回帰不足）を修正。初回DB作成順序・通知からの設定同期も別担当が重点再レビューし、未解決P0/P1/P2なし。独立レビュー後の差分はテスト接続fixtureだけで、最終製品コードがレビュー対象と一致することを自己確認。
 - 途中のCI失敗は旧APIのCloseable不足と、接続fixtureの隠しAPI・loopback拒否・複数NIC/接続先port指定の問題として修正。最終成功runだけを合格根拠とする。実機の通信成功や省電力動作を自動試験結果から推定しない。
 
-## CIで一時生成したAPK（未配送）
+## PR CIで一時生成したAPK（完成mainの配送物ではない）
 
 | 項目 | 確認値 |
 | --- | --- |
@@ -26,12 +26,12 @@
 | 署名 | v1/v2成功、証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2` |
 | 配送状態 | runner内の一時生成のみ。Artifact/Release asset/Driveには保存・配送していない |
 
-このAPKを完成main版や取得可能な配送物と扱わない。Release作成・APK配布は検収と別途明示依頼の後に、承認されたsource SHAから実施する。
+このPR CI内のAPKを完成main版や取得可能な配送物と扱わない。社長はマージとRelease配送を承認済み。実機検収より前に、完成mainから署名Releaseを作成してAPKを取得可能にする必要がある。今回のマージは `[release-test]` 付きで、Release workflowの起動条件を満たしているが、実際のrun結果・Asset・ハッシュ・署名は要確認。
 
 ## 残工程と再開点
 
-- PR #39の最新headでソース検収。実機はOFF表示中の双方向本文/ファイル、他端末からの探索、ホーム/消灯後の不受信、復帰後の再探索/再送、通知一時停止、ONの背景受信、Wi-Fi復帰を必要なAndroid6–10端末で確認する。手順は上記ライフサイクル文書を参照。
-- 社長の別途承認までDraft保持、マージ・Release・APK配布・Drive更新は行わない。完了済みの実装・試験・レビューを再実施せず、追加変更があれば影響範囲を検証する。
+- PR #39のコードは最終head・CI・レビュー確認後にmainへマージ済み。次に完成mainの署名Releaseを取得し、実機でOFF表示中の双方向本文/ファイル、他端末からの探索、ホーム/消灯後の不受信、復帰後の再探索/再送、通知一時停止、ONの背景受信、Wi-Fi復帰を確認する。手順は上記ライフサイクル文書を参照。
+- 2026-11-22、PR #39をReadyへ変更し、`[release-test] 常駐受信OFFでも画面表示中のLAN通信を有効化 (#39)` としてsquash merge成功。完成main SHA `29dd3337bdb4bc3e2ff2f74605a025d9a4e502bb`。社長のマージ・Release配送承認に従う。Release workflowは `[release-test]` main pushで起動する設計だが、run成功・Release公開・署名APK取得はツール上未確認。確認できるまでは再配送せず、run ID・Asset・SHA-256・署名を照合する。文書更新だけで新しいReleaseを起動しない。Google Drive固定ファイル更新は別途許可が必要。
 - 通常git pushの認証が使えず、接続済みGitHub APIで反映した。APIではAuthor/Committerを指定できないためGitHubプロフィールの自動名義になっている（noreplyメール）。ローカルのxiaqui名義の履歴とリモートの内容一致はtree比較で確認した。
 
 ---
