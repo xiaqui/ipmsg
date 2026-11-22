@@ -1,3 +1,41 @@
+# アプリ使用中LAN通信の分離（2026-11-22 JST）
+
+状態：**実装・自動検証・独立レビュー完了。[Draft PR #39](https://github.com/xiaqui/ipmsg/pull/39)で検収待ち。実機検収・マージ・Release/APK配送・Drive更新は未実施。**
+
+- 基準main: `781a0e5288bd02d37aa884d5c8c06a5f85a4a38d`。branch: `fix/foreground-lan-runtime`。コード検証済みhead: `25ea044c1f8a005ccf71c80bc246a610e1a7b86a`。本記録とTASKの結果追記はその後の文書変更だけで、製品・テストコードは同一。
+- `LanRuntime`で表示中のActivityと常駐サービスの所有権を統合し、一つのエンジンを共有。OFFでも表示中は通信し、非表示・消灯・ロック時はソケットを閉じ、ワーカーとSAF最終保存の終了後にDBを解放する。再表示時は旧セッションの終了後に再bindする。
+- pausedでも表示中の分割画面は継続。通知一時停止は背景所有権だけを解除し、開いたままの設定スイッチも既存の定期更新で追従する。新セッション開始時に古いONLINEを失効。初回DB作成はUI側で先に完了させる。StoreはAPI23–28でもuse/closeできるようCloseableを明示。
+- プロトコル・DBスキーマ・Windows製品コード、minSdk23、applicationIdは維持。状態遷移と実機手順は [FOREGROUND_LAN_LIFECYCLE_JA.md](FOREGROUND_LAN_LIFECYCLE_JA.md)。
+
+## 最終検証
+
+- [Android CI 44932472066](https://github.com/xiaqui/ipmsg/actions/runs/44932472066)：**146件、失敗/エラー0、skip0**、Lint、assembleDebug、署名・package/minSdk検査が成功。追加試験はAPI23/26/28/29/34。実Activityの表示/非表示/消灯・設定追従、所有権競合・再生成・ON/OFF連打、ポート再利用、実UDP署名HELLO、暗号化TCP本文/ACK、保留再送、部分ファイル受信後の画面離脱とFILE_RESUMEを検証。
+- [Windows CI 44932472070](https://github.com/xiaqui/ipmsg/actions/runs/44932472070)：Android↔Windows生成ベクトルの双方向試験、Python **28件すべて成功**、Ruff、Windows上の試験・PyInstaller・EXE --versionが成功。
+- ローカル：Windows回帰28件中27成功/Android生成ベクトル1件skip（上記CIでは実行成功）、Ruff、compileall、git diff --checkが成功。SDK/Gradleの新規構築はしていない。
+- 独立レビューのP2（未稼働時診断のONLINE表示、paused分割画面の扱い、実通信回帰不足）を修正。初回DB作成順序・通知からの設定同期も別担当が重点再レビューし、未解決P0/P1/P2なし。独立レビュー後の差分はテスト接続fixtureだけで、最終製品コードがレビュー対象と一致することを自己確認。
+- 途中のCI失敗は旧APIのCloseable不足と、接続fixtureの隠しAPI・loopback拒否・複数NIC/接続先port指定の問題として修正。最終成功runだけを合格根拠とする。実機の通信成功や省電力動作を自動試験結果から推定しない。
+
+## CIで一時生成したAPK（未配送）
+
+| 項目 | 確認値 |
+| --- | --- |
+| ビルド元 | PR merge ref `e069e981a7aee8bcbcce39bb35c2ed2f9eb6bc41`（mainへのマージではない） |
+| 対象head / run | 上記 `25ea044` / `44932472066` |
+| package / minSdk | `com.xiaqui.ipmsg` / 23 |
+| サイズ / SHA-256 | 2,198,977 bytes / `1fa6b1c11057c224095faa4841c6c6886d46e1cc68ed4187ed4b56b37625d48b` |
+| 署名 | v1/v2成功、証明書SHA-256 `dcfd2c8122274ec4148473c96b1853989c8d22e58e445d6ec4889ad5b34dffb2` |
+| 配送状態 | runner内の一時生成のみ。Artifact/Release asset/Driveには保存・配送していない |
+
+このAPKを完成main版や取得可能な配送物と扱わない。Release作成・APK配布は検収と別途明示依頼の後に、承認されたsource SHAから実施する。
+
+## 残工程と再開点
+
+- PR #39の最新headでソース検収。実機はOFF表示中の双方向本文/ファイル、他端末からの探索、ホーム/消灯後の不受信、復帰後の再探索/再送、通知一時停止、ONの背景受信、Wi-Fi復帰を必要なAndroid6–10端末で確認する。手順は上記ライフサイクル文書を参照。
+- 社長の別途承認までDraft保持、マージ・Release・APK配布・Drive更新は行わない。完了済みの実装・試験・レビューを再実施せず、追加変更があれば影響範囲を検証する。
+- 通常git pushの認証が使えず、接続済みGitHub APIで反映した。APIではAuthor/Committerを指定できないためGitHubプロフィールの自動名義になっている（noreplyメール）。ローカルのxiaqui名義の履歴とリモートの内容一致はtree比較で確認した。
+
+---
+
 # M6-2 device acceptance follow-up (2026-10-24 JST)
 
 - Basic operation was confirmed on the Android 6–10 test-device range. Android-to-Android file transfer and multi-file transfer succeeded in practical use. This does not constitute acceptance of every Android version or transfer condition.

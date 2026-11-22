@@ -25,7 +25,7 @@ data class TransferFile(val transferId:String,val fileId:String,val name:String,
     val offset:Long,val prefixSha256:String,val state:String)
 
 /** All delivery transitions commit synchronously before an ACK is emitted. */
-class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ipmsg.db", null, 3) {
+class Store(context: Context) : SQLiteOpenHelper(context.applicationContext, "ipmsg.db", null, 3), java.io.Closeable {
     companion object { val deliveryGate = Any() }
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE peers(id TEXT PRIMARY KEY,name TEXT NOT NULL,pub TEXT NOT NULL,trusted INTEGER NOT NULL,host TEXT NOT NULL,seen INTEGER NOT NULL,files INTEGER NOT NULL DEFAULT 0)")

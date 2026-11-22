@@ -7,13 +7,12 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import java.util.concurrent.Executors
 
 class MessengerService : Service() {
     companion object {
         @Volatile var active = false
-        @Volatile var engine: LanEngine? = null
-        @Volatile var problem = ""
+        val engine: LanEngine? get() = LanRuntime.engine
+        val problem: String get() = LanRuntime.problem
         fun start(context: Context) {
             val intent = Intent(context,MessengerService::class.java)
             if(Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
@@ -31,14 +30,11 @@ class MessengerService : Service() {
         }
         fun pause(context: Context) {
             ReceiverState.pause(context)
-            runCatching { Store(context).use { it.offline() } }
+            LanRuntime.pauseBackground(context)
             context.stopService(Intent(context,MessengerService::class.java))
             MessengerNotifications.showPaused(context)
         }
     }
-    private val init = Executors.newSingleThreadExecutor()
-    private var destroyed = false
-    private var db: Store? = null
     override fun onCreate() {
         super.onCreate()
         MessengerNotifications.ensureChannels(this)
@@ -46,49 +42,18 @@ class MessengerService : Service() {
         if(Build.VERSION.SDK_INT >= 29)
             startForeground(1,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         else startForeground(1,notification)
-        if(!ReceiverState.enabled(this)) { stopSelf();return }
-        active = true; problem = ""
-        init.execute {
-            runCatching {
-                val store = Store(this)
-                val lan = LanEngine(this,store,Identity.load(),::notifyLetter,::notifyFileOffer)
-                synchronized(this) {
-                    if(destroyed) { store.close(); return@execute }
-                    db = store; engine = lan; lan.start()
-                }
-            }.onFailure {
-                problem = "受信を開始できませんでした。アプリから受信を再開してください"
-                android.os.Handler(mainLooper).post { stopSelf() }
-            }
-        }
     }
-    private fun notifyLetter(letter: Letter) {
-        if(!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
-        val open = MessengerNotifications.open(this,true)
-        try {
-            NotificationManagerCompat.from(this).notify(2,NotificationCompat.Builder(this,"letters")
-                .setSmallIcon(R.drawable.ic_notification_envelope).setContentTitle("IP Messenger：手紙が届きました")
-                .setContentText("受信箱を開いて確認").setContentIntent(open).setAutoCancel(true).build())
-        } catch(_: SecurityException) { }
+    override fun onStartCommand(intent: Intent?,flags: Int,startId: Int): Int {
+        val enabled = ReceiverState.enabled(this)
+        active = enabled
+        LanRuntime.background(this,this,enabled)
+        if(!enabled) { stopSelf(); return START_NOT_STICKY }
+        return START_STICKY
     }
-    private fun notifyFileOffer(name:String,transferId:String) {
-        if(!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
-        val open=PendingIntent.getActivity(this,3,
-            Intent(this,MainActivity::class.java).putExtra("files",true),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        try { NotificationManagerCompat.from(this).notify(3,NotificationCompat.Builder(this,"letters")
-            .setSmallIcon(R.drawable.ic_notification_envelope).setContentTitle("$name からファイル")
-            .setContentText("開いて保存先を選んでください").setContentIntent(open).setAutoCancel(true).build())
-        } catch(_:SecurityException) { }
-    }
-    override fun onStartCommand(intent: Intent?,flags: Int,startId: Int): Int = START_STICKY
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onDestroy() {
-        synchronized(this) {
-            destroyed = true; engine?.close(); engine = null; active = false
-            // Listener threads may still unwind; SQLite helper remains valid until process exit.
-        }
-        init.shutdownNow()
+        LanRuntime.background(this,this,false)
+        active = false
         super.onDestroy()
     }
 }
@@ -153,11 +118,31 @@ object MessengerNotifications {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification=NotificationCompat.Builder(context,"receiver")
             .setSmallIcon(R.drawable.ic_notification_envelope).setContentTitle("IP Messenger：一時停止中")
-            .setContentText("LAN通信停止中・タップで再開")
+            .setContentText("常駐受信は停止中・アプリ使用中は通信します")
             .setContentIntent(resume).addAction(R.drawable.ic_notification_envelope,"再開",resume)
             .setOngoing(true).build()
         try { NotificationManagerCompat.from(context).notify(PAUSED_ID,notification) }
         catch(_:SecurityException) { }
+    }
+    fun notifyLetter(context:Context) {
+        ensureChannels(context)
+        if(!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        try {
+            NotificationManagerCompat.from(context).notify(2,NotificationCompat.Builder(context,"letters")
+                .setSmallIcon(R.drawable.ic_notification_envelope).setContentTitle("IP Messenger：手紙が届きました")
+                .setContentText("受信箱を開いて確認").setContentIntent(open(context,true)).setAutoCancel(true).build())
+        } catch(_: SecurityException) { }
+    }
+    fun notifyFileOffer(context:Context,name:String) {
+        ensureChannels(context)
+        if(!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val open=PendingIntent.getActivity(context,3,
+            Intent(context,MainActivity::class.java).putExtra("files",true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        try { NotificationManagerCompat.from(context).notify(3,NotificationCompat.Builder(context,"letters")
+            .setSmallIcon(R.drawable.ic_notification_envelope).setContentTitle("$name からファイル")
+            .setContentText("開いて保存先を選んでください").setContentIntent(open).setAutoCancel(true).build())
+        } catch(_:SecurityException) { }
     }
     fun cancelPaused(context:Context)=NotificationManagerCompat.from(context).cancel(PAUSED_ID)
 }

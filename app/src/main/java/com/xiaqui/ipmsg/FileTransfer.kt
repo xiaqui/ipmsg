@@ -55,6 +55,21 @@ object FileContract {
 
 class FileTransferManager(private val context:Context,private val store:Store,
     private val changed:()->Unit,private val offered:(String,String)->Unit) {
+    private val tasks = java.util.Collections.synchronizedSet(mutableSetOf<Thread>())
+    private fun localTask(action: () -> Unit) {
+        val thread = Thread {
+            try { action() } finally { tasks.remove(Thread.currentThread()) }
+        }
+        tasks.add(thread); thread.start()
+    }
+    /** The engine calls this after network workers drain; final SAF writes may safely finish. */
+    internal fun awaitIdle() {
+        while(true) {
+            val pending = synchronized(tasks) { tasks.toList() }
+            if(pending.isEmpty()) return
+            pending.forEach { it.join() }
+        }
+    }
     private data class DigestState(val offset:Long,val digest:MessageDigest)
     private val sourceDigests=ConcurrentHashMap<String,DigestState>()
     private val targetDigests=ConcurrentHashMap<String,DigestState>()
@@ -103,7 +118,7 @@ class FileTransferManager(private val context:Context,private val store:Store,
             require(isFile)
         }.absolutePath }
         store.acceptTransfer(transfer.id,transfer.peer,tree.toString(),temps);changed()
-        if(files.any { it.source.isNotEmpty() }) Thread { copySelf(transfer) }.start()
+        if(files.any { it.source.isNotEmpty() }) localTask { copySelf(transfer) }
     }
     fun decline(transfer:Transfer) { store.setTransferState(transfer.id,transfer.peer,transfer.incoming,
         if(transfer.incoming) "DECLINED" else "CANCEL_PENDING","CANCELLED",if(transfer.incoming) null else 0L);changed() }
@@ -213,10 +228,10 @@ class FileTransferManager(private val context:Context,private val store:Store,
         val task=key(id,fileId)
         if(finalizing.add(task)) {
             store.setTransferState(id,peer.id,true,"FINALIZING")
-            Thread { try { finalizeIncoming(transfer,file) }
+            localTask { try { finalizeIncoming(transfer,file) }
                 catch(error:Exception) { store.setTransferState(id,peer.id,true,"PAUSED","IO_ERROR") }
                 finally { finalizing.remove(task);changed() }
-            }.start()
+            }
         }
         return error(id,"TIMEOUT",true,fileId)
     }
