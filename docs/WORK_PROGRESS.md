@@ -1,3 +1,13 @@
+# v0.5.1 配布版番号・APK命名の是正（2026-11-22）
+
+- 前回の0.5.0（versionCode 5）のまま、PR #39の通信分離機能をmainへマージしていた。Android同一署名・同一versionCodeの異なるAPKは更新判定を曖昧にするため、今回から **versionName 0.5.1 / versionCode 6** とする。履歴に残る0.5.0の古いReleaseを改名・削除・上書きしない。
+- 署名Release workflowは `aapt dump badging` で完成APK実体の版を読み、`IPMessenger-v0.5.1-preview.apk` 型のファイル名、`ipmsg-v0.5.1-preview` 型のtag、版付きReleaseタイトルを生成する。SHA-256/署名の再ダウンロード検証と固定署名鍵運用を維持する。同じタグが既にあれば無条件の再公開を拒否する。
+- 成果物の確認項目はsource SHA、versionName/versionCode、APK SHA-256/証明書、Actions run、Release Assetであり、**PRのコード/CI成功のみを実配布や実機合格と扱わない**。マージ後に一度だけ公開対象を決めてReleaseし、出荷の実体を確認する。
+- 公開済みの0.5.0のAPKと0.5.1のAPKは**別実体**。Google Drive固定ファイルは今回の変更対象外。Android6(API23)対応は据え置き。
+- GitHubでPRを作成・自動検証し、問題がなければマージ時に明示的な公開トリガーを設定する。Releaseの実在・ハッシュ・実機インストールは別途確認が必要。
+
+---
+
 # アプリ使用中LAN通信の分離（2026-11-22 JST）
 
 状態：**PR #39の実装・自動検証・レビュー完了、2026-11-22にmainへマージ済み。実機検収は未実施。mainからの署名Release公開・APK実体の確認は未完了（配送成功とは扱わない）。Drive未更新。**
