@@ -3,6 +3,8 @@
 更新：2026-11-22 JST
 対象：Android版 IP Messenger（Android 6 / API 23以降）
 
+**最新版の配送作業**：PR #40で `versionName=0.5.1` / `versionCode=6` と版付き署名APK名・Releaseタグへ修正済み。Android CI run `44972862914` 成功、マージ済みmain `61cf9ce73ee36680ea953c7efd52875769d8645d` から `[release-test]` でRelease workflowを発火させる構成。**Release成功・実物確認・実機検収は未確認**。次は既存のrun/Release/Assetを確認し、追加Releaseを作らずsource SHA・版・SHA-256・署名を照合する。
+
 状態：**PR #39は自動検証・レビュー完了後、mainへマージ済み。** Android146件（失敗/skip0）・Lint・署名ビルド、Windows28件・互換検査・EXEビルド成功。完成main SHAは `29dd3337bdb4bc3e2ff2f74605a025d9a4e502bb`。`[release-test]`付きマージでRelease workflowの起動条件を満たしたが、**Release run成功・公開Asset・実機検収は未確認**。コード検証済みhead `25ea044c1f8a005ccf71c80bc246a610e1a7b86a`、PR最終head `b308d9c45dbb67070ff09b3a883186eb72ef1ed2`。以下は実装済み仕様の記録であり、再実装指示ではない。
 
 ## 背景と現在地
@@ -39,7 +41,7 @@
 4. 関連テスト、Lint、ビルド、`git diff --check`、Windows互換回帰を確認する。独立レビューのP0/P1はマージ前に解消し、P2も修正または合理的な扱いを記録する。ソース・CI合格を実機合格とはみなさない。
 5. **承認・マージ実績と今後の順序**：社長は今回のPRマージとRelease配送を承認済み。PR #39は最終head・CI・レビューを確認してmainにマージした。現在のipmsgは **実装 → 自動試験・独立レビュー → 承認済みマージ → 完成mainから署名APKをRelease公開 → 実機インストール・検収** の順序とする。**実機合格をマージまたは検収用Releaseの前提条件にしてはならない。** Release公開の成否はworkflow実行結果・asset実在・署名・hashで別途確認する。実機NGなら新たな修正PRで再検証する。Release乱造を避ける。Google Drive固定APKの変更は今回の許可に含めない。
 6. 実機検収ではZ3TC(Android6)、Z4T(7)、XZ1 Compact(8)、Rakuten Mini(9)、Hand/Ace(Android10)などを必要に応じて使い、常駐OFFで画面表示中の双方向本文・ファイル転送、別端末からの認識、ホーム／消灯後の不受信、画面復帰時の再探索、ONへの復帰を確認する。
-7. 【残工程】完成main `29dd333` のRelease workflowのrun結果、公開Asset・サイズ・SHA-256・署名を確認して `docs/WORK_PROGRESS.md` に追記する。続いて実機検収。既存Releaseを確認せず新規Releaseを作り直さない。Google Drive固定ファイルを勝手に上書きしない。
+7. 【残工程】v0.5.1の完成main `61cf9ce` のRelease workflowのrun結果、公開Asset・サイズ・SHA-256・署名を確認して `docs/WORK_PROGRESS.md` に追記する。続いて実機検収。既存Releaseを確認せず新規Releaseを作り直さない。Google Drive固定ファイルを勝手に上書きしない。
 
 ## 別件の保留
 
